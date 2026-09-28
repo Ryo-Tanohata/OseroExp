@@ -90,8 +90,12 @@ test('Claude 用のプロンプトに盤面と合法手が入る', () => {
   assert.ok(p.includes('4 . . . O X . . .'));
   assert.ok(p.includes('合法手: d3, c4, f5, e6'));
   assert.ok(p.includes('着手: d3'));
-  const c = CL.commentaryPrompt({ board: b, toMove: O.WHITE, analysis: a, last: { player: O.BLACK, move: 19 } });
+  const b1 = O.applyMove(b, 19, O.BLACK).board;
+  const a1 = AI.search(b1, O.WHITE, { depth: 2, exact: 0 });
+  const c = CL.commentaryPrompt({ board: b1, toMove: O.WHITE, analysis: a1, last: { player: O.BLACK, move: 19, boardBefore: b, analysisBefore: a } });
   assert.ok(c.includes('黒(X) が d3 に打った'));
+  assert.ok(c.includes('事実メモ'));
+  assert.ok(c.includes('【最善手】'));
 });
 
 console.log(`\n${passed} passed`);

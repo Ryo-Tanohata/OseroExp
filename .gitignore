@@ -1,0 +1,3 @@
+train/checkpoints/
+train/__pycache__/
+node_modules/

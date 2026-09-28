@@ -32,9 +32,15 @@
     claudeCommentary: $('claude-commentary'), claudeWait: $('claude-wait'),
     claudeEngine: $('claude-engine'), claudeTest: $('claude-test'),
     claudeTestResult: $('claude-test-result'), claudeHelp: $('claude-help'),
+    azSims: $('az-sims'), azCard: $('az-card'), azState: $('az-state'), azTitle: $('az-title'),
+    azBar: $('az-bar'), azSummary: $('az-summary'), azMoves: $('az-moves'), azPv: $('az-pv'),
+    claudeCardName: $('claude-card-name'), rowClaudeModel: $('row-claude-model'),
+    rowLlmModel: $('row-llm-model'), rowLlmBase: $('row-llm-base'),
+    llmModel: $('llm-model'), llmModelList: $('llm-model-list'), llmBase: $('llm-base'),
     rowBridge: $('row-bridge'), claudeSettings: $('claude-settings'),
   };
   const CL = window.OthelloClaude;
+  const AZ = window.OthelloAlphaZero;
 
   const state = {
     board: O.createBoard(),
@@ -51,6 +57,7 @@
     timer: null,
     claudeAbort: null,    // 実行中の Claude への問い合わせを中断する AbortController
     hover: null,          // マウスを乗せているマス（リアルタイムの手の説明用）
+    azLast: null,         // 直近の AlphaZero の探索結果（実況に使う）
   };
 
   // ---------- 盤面の生成 ----------
@@ -101,10 +108,15 @@
     return player === BLACK; // ai-human
   }
 
-  /** 1〜4 は内蔵AIの強さ、'claude' は Claude が打つ */
+  /** 1〜4 は内蔵AIの強さ、'az' / 'az-mid' は AlphaZero、'claude' は Claude が打つ */
   function levelOf(player) {
     const v = (player === BLACK ? el.levelBlack : el.levelWhite).value;
-    return v === 'claude' ? v : parseInt(v, 10);
+    return /^\d+$/.test(v) ? parseInt(v, 10) : v;
+  }
+
+  function isAZ(player) {
+    const l = levelOf(player);
+    return isAI(player) && (l === 'az' || l === 'az-mid');
   }
 
   function isClaude(player) {
@@ -116,6 +128,7 @@
     const mode = el.mode.value;
     if (mode === 'human-human') return color;
     if (isClaude(player)) return `${color}（Claude）`;
+    if (isAZ(player)) return `${color}（AlphaZero${levelOf(player) === 'az-mid' ? '・学習途中' : ''}）`;
     if (isAI(player)) return `${color}（AI・${AI.LEVELS[levelOf(player)].name}）`;
     return `${color}（あなた）`;
   }
@@ -135,8 +148,16 @@
     Object.assign(state, {
       board: O.createBoard(), toMove: BLACK, analysis: null, last: null,
       history: [], log: [], justPlaced: null, justFlipped: [], thinking: false,
-      paused: false,
+      paused: false, azLast: null,
     });
+    for (const k of Object.keys(azTrees)) delete azTrees[k];
+    el.azCard.hidden = !(isAZ(BLACK) || isAZ(WHITE));
+    el.azTitle.textContent = el.azCard.hidden ? '' : 'AlphaZero の番になると、探索の様子がここにリアルタイムで表示されます。';
+    el.azSummary.textContent = '';
+    el.azMoves.innerHTML = '';
+    el.azPv.textContent = '';
+    el.azState.textContent = '';
+    el.azBar.style.width = '50%';
     resetClaudeCard();
     advance();
   }
@@ -199,6 +220,10 @@
       claudeMove(token);
       return;
     }
+    if (isAZ(state.toMove)) {
+      azMove(token);
+      return;
+    }
     state.timer = setTimeout(() => {
       if (token !== state.token) return;
       const level = levelOf(state.toMove);
@@ -213,6 +238,112 @@
     }, parseInt(el.speed.value, 10));
   }
 
+  // ---------- AlphaZero ----------
+  const AZ_MODELS = { az: 'models/alphazero.js', 'az-mid': 'models/alphazero-mid.js' };
+  const azNets = {};   // level -> Promise<Network>
+  const azTrees = {};  // "色:level" -> MCTS（手をまたいで探索木を使い回す）
+
+  /** 重みは <script> で読み込む（file:// で開いた場合でも動くように） */
+  function loadAz(level) {
+    if (!azNets[level]) {
+      azNets[level] = new Promise((resolve, reject) => {
+        const store = window.OTHELLO_AZ_MODELS || {};
+        if (store[level]) { resolve(new AZ.Network(store[level])); return; }
+        const sc = document.createElement('script');
+        sc.src = AZ_MODELS[level];
+        sc.onload = () => {
+          const data = (window.OTHELLO_AZ_MODELS || {})[level];
+          if (data) resolve(new AZ.Network(data));
+          else reject(new Error('AlphaZero の重みが見つかりません'));
+        };
+        sc.onerror = () => reject(new Error(`AlphaZero の重み（${AZ_MODELS[level]}）を読み込めません`));
+        document.head.appendChild(sc);
+      }).catch(e => { delete azNets[level]; throw e; });
+    }
+    return azNets[level];
+  }
+
+  async function azMove(token) {
+    const player = state.toMove;
+    const level = levelOf(player);
+    const t0 = Date.now();
+    el.azCard.hidden = false;
+    let net;
+    try {
+      net = await loadAz(level);
+    } catch (e) {
+      if (token !== state.token) return;
+      el.azTitle.textContent = e.message + '（内蔵AIが代わりに打ちます）';
+      state.thinking = false;
+      play(state.analysis.best);
+      return;
+    }
+    if (token !== state.token) return;
+    const key = player + ':' + level;
+    if (!azTrees[key] || azTrees[key].net !== net) azTrees[key] = new AZ.MCTS(net);
+    // AI同士の対局が毎回同じにならないよう、最初の数手だけ訪問回数に比例した確率で選ぶ
+    const movesSoFar = state.log.filter(e => !e.pass).length;
+    const temperature = el.mode.value === 'ai-ai' && movesSoFar < 4 ? 1 : 0;
+    const stats = await azTrees[key].search(state.board, player, {
+      sims: parseInt(el.azSims.value, 10),
+      temperature,
+      shouldStop: () => token !== state.token,
+      onProgress: st => renderAz(player, level, st, true),
+    });
+    if (!stats || token !== state.token) return;
+    renderAz(player, level, stats, false);
+    state.azLast = { player, level, stats, moveNumber: movesSoFar + 1 };
+    const wait = Math.max(0, parseInt(el.speed.value, 10) - (Date.now() - t0));
+    state.timer = setTimeout(() => {
+      if (token !== state.token) return;
+      state.thinking = false;
+      play(stats.move);
+    }, wait);
+  }
+
+  function azMoveName(m) {
+    return m === AZ.PASS ? 'パス' : O.toNotation(m);
+  }
+
+  /** AlphaZero の読みをカードに表示（探索中もリアルタイムに更新） */
+  function renderAz(player, level, st, live) {
+    el.azCard.hidden = false;
+    const who = `${O.colorName(player)}（AlphaZero${level === 'az-mid' ? '・学習途中' : ''}）`;
+    el.azTitle.textContent = live ? `${who}が探索中… ${st.sims}回` : `${who}の結論：${azMoveName(st.move)}（探索${st.sims}回）`;
+    el.azState.textContent = live ? '探索中' : '完了';
+    el.azState.className = 'claude-state ' + (live ? 'busy' : 'done');
+    const blackWin = player === BLACK ? st.winRate : 1 - st.winRate;
+    el.azBar.style.width = Math.round(blackWin * 100) + '%';
+
+    const top = st.moves[0];
+    const byPrior = st.moves.slice().sort((a, b) => b.prior - a.prior)[0];
+    let summary = `AlphaZero の見立てでは ${O.colorName(player)}の勝率は約${Math.round(st.winRate * 100)}%（黒${Math.round(blackWin * 100)}% : 白${100 - Math.round(blackWin * 100)}%）。`;
+    if (top && byPrior && top.move !== byPrior.move && st.sims >= 50) {
+      summary += `ネットの直感では ${azMoveName(byPrior.move)} が第一候補でしたが、読んだ結果 ${azMoveName(top.move)} の方が良いと判断しています。`;
+    } else if (top) {
+      summary += `直感でも読みでも ${azMoveName(top.move)} が最有力です。`;
+    }
+    if (!live && top && st.move !== top.move) {
+      summary += `（序盤は対局に変化をつけるため、探索の配分に比例した確率で ${azMoveName(st.move)} を選びました）`;
+    }
+    el.azSummary.textContent = summary;
+
+    el.azMoves.innerHTML = '';
+    for (const m of st.moves.slice(0, 5)) {
+      const tr = document.createElement('tr');
+      const after = m.q === null ? '―' : Math.round((m.q + 1) * 50) + '%';
+      [azMoveName(m.move), Math.round(m.share * 100) + '%', after, Math.round(m.prior * 100) + '%'].forEach(v => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      el.azMoves.appendChild(tr);
+    }
+    el.azPv.textContent = st.pv.length
+      ? '読み筋：' + st.pv.map(p => `${O.colorName(p.player)}${azMoveName(p.move)}`).join(' → ')
+      : '';
+  }
+
   /** Claude に次の手を考えさせる（考えている文章はリアルタイムに表示） */
   async function claudeMove(token) {
     cancelClaude();
@@ -224,6 +355,7 @@
     let move = null;
     let note = '';
     try {
+      if (!CL.canPlay()) throw new Error('Claude に打たせるには、言語モデルの設定で「ローカルの Claude Code」を選んでください。');
       const text = await streamToCard({
         title: `${playerLabel(player)}の考え`,
         prompt: CL.movePrompt({ board, player, analysis, last: state.last }),
@@ -247,6 +379,13 @@
     play(move, { byClaude: true });
   }
 
+  /** 直前の手が AlphaZero の手なら、その探索結果を実況の材料にする */
+  function azForLast(last) {
+    const a = state.azLast;
+    if (!a || !last || last.pass || a.player !== last.player || a.stats.move !== last.move) return null;
+    return a;
+  }
+
   /** 直前の手（または終局）を Claude にリアルタイム実況させる */
   function startCommentary() {
     cancelClaude();
@@ -260,7 +399,7 @@
     else title = `${O.colorName(last.player)} ${O.toNotation(last.move)} の実況`;
     return streamToCard({
       title,
-      prompt: CL.commentaryPrompt({ board: state.board, toMove: state.toMove, analysis: state.analysis, last }),
+      prompt: CL.commentaryPrompt({ board: state.board, toMove: state.toMove, analysis: state.analysis, last, az: azForLast(last) }),
       signal: ctrl.signal,
       busyLabel: '実況中…',
     }).catch(() => { /* エラーはカードに表示済み */ })
@@ -387,13 +526,20 @@
   // カードの「世代」。古い問い合わせの結果が新しい表示を上書きしないようにする
   let cardGen = 0;
 
+  function llmName() {
+    const cfg = CL.getSettings();
+    if (CL.isLocalLlm()) return cfg.llmModel || 'ローカルLLM';
+    return 'Claude';
+  }
+
   function resetClaudeCard() {
     cardGen++;
+    el.claudeCardName.textContent = `${llmName()} の実況`;
     el.claudeCard.hidden = !claudeVisible();
     el.claudeTitle.textContent = '';
     el.claudeText.textContent = CL.enabled()
       ? (CL.getSettings().commentary ? '手が打たれると、Claude がリアルタイムで実況します。' : '')
-      : 'Claude 連携がオフです。左下の「Claude 連携の設定」で接続方法を選んでください。';
+      : '言語モデル連携がオフです。左下の「言語モデル（Claude・実況）の設定」で接続方法を選んでください。';
     setClaudeState('', '');
   }
 
@@ -648,6 +794,7 @@
   el.mode.addEventListener('change', newGame);
   [el.levelBlack, el.levelWhite].forEach(s => s.addEventListener('change', () => {
     if (el.claudeCard.hidden && claudeVisible()) resetClaudeCard();
+    if (isAZ(BLACK) || isAZ(WHITE)) el.azCard.hidden = false;
     render();
     if (!state.thinking) return;
     // 考え中なら新しい設定で考え直す
@@ -661,7 +808,12 @@
 
   // ---------- Claude 連携の設定 ----------
   const HELP = {
-    none: 'Claude を使わず、内蔵AIだけで対局・解説します。',
+    none: '言語モデルを使わず、内蔵AIと AlphaZero だけで対局・解説します。',
+    ollama: 'Ollama（無料）で動かすオープンモデルが実況します。例: `ollama pull qwen2.5:7b` でモデルを入れ、' +
+      '`node server/claude-bridge.mjs` を起動して http://localhost:8787 を開いてください。' +
+      'モデルは実況だけを担当し、着手は AlphaZero や内蔵AIが決めます。',
+    openai: 'LM Studio などの OpenAI 互換ローカルサーバー（既定: http://127.0.0.1:1234/v1）のモデルが実況します。' +
+      '`node server/claude-bridge.mjs` 経由でつなぎます。',
     local: 'ターミナルで `node server/claude-bridge.mjs` を起動し、http://localhost:8787 を開いてください。' +
       'パソコンの `claude` コマンド（Claude Code）にログインしているアカウントで動くので、APIキーは不要です。',
   };
@@ -692,7 +844,13 @@
     el.claudeCommentary.checked = cfg.commentary;
     el.claudeWait.checked = cfg.waitCommentary;
     el.claudeEngine.checked = cfg.useEngine;
-    el.rowBridge.hidden = cfg.provider !== 'local';
+    el.rowBridge.hidden = cfg.provider === 'none';
+    el.rowClaudeModel.hidden = cfg.provider !== 'local';
+    el.rowLlmModel.hidden = !CL.isLocalLlm();
+    el.rowLlmBase.hidden = !CL.isLocalLlm();
+    el.llmModel.value = cfg.llmModel;
+    el.llmBase.value = cfg.llmBase;
+    el.llmBase.placeholder = CL.LLM_BASES[cfg.provider] ? `自動（${CL.LLM_BASES[cfg.provider]}）` : '';
     el.claudeHelp.textContent = HELP[cfg.provider];
     fillModelOptions();
   }
@@ -706,15 +864,32 @@
     if (CL.enabled()) el.claudeSettings.open = true;
   });
   el.claudeModel.addEventListener('change', () => CL.save({ model: el.claudeModel.value }));
+  el.llmModel.addEventListener('change', () => { CL.save({ llmModel: el.llmModel.value.trim() }); resetClaudeCard(); });
+  el.llmBase.addEventListener('change', () => CL.save({ llmBase: el.llmBase.value.trim() }));
   el.claudeBridge.addEventListener('change', () => CL.save({ bridgeUrl: el.claudeBridge.value.trim() }));
   el.claudeCommentary.addEventListener('change', () => { CL.save({ commentary: el.claudeCommentary.checked }); resetClaudeCard(); });
   el.claudeWait.addEventListener('change', () => CL.save({ waitCommentary: el.claudeWait.checked }));
   el.claudeEngine.addEventListener('change', () => CL.save({ useEngine: el.claudeEngine.checked }));
   el.claudeTest.addEventListener('click', async () => {
-    CL.save({ bridgeUrl: el.claudeBridge.value.trim() });
+    CL.save({ bridgeUrl: el.claudeBridge.value.trim(), llmModel: el.llmModel.value.trim(), llmBase: el.llmBase.value.trim() });
     el.claudeTestResult.textContent = '接続中…';
     el.claudeTest.disabled = true;
     try {
+      if (CL.isLocalLlm()) {
+        // インストール済みのモデル一覧を候補として出す
+        const models = await CL.listLlmModels();
+        el.llmModelList.innerHTML = '';
+        for (const m of models) {
+          const o = document.createElement('option');
+          o.value = m;
+          el.llmModelList.appendChild(o);
+        }
+        if (!el.llmModel.value && models.length) {
+          el.llmModel.value = models[0];
+          CL.save({ llmModel: models[0] });
+          resetClaudeCard();
+        }
+      }
       const reply = await CL.testConnection();
       el.claudeTestResult.textContent = '✅ 接続できました：' + reply;
     } catch (e) {

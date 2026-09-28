@@ -3,6 +3,7 @@
  * claude-bridge.mjs — ローカルの Claude Code (claude コマンド) とブラウザをつなぐ小さなサーバー
  *
  * ・このフォルダのファイル（index.html など）を http://localhost:8787 で配信する
+ * ・POST /api/llm で、ローカルで動く無料の言語モデル（Ollama / LM Studio など）に中継する
  * ・POST /api/claude で受け取ったプロンプトを `claude -p` に渡し、
  *   返ってくる文章を Server-Sent Events でブラウザへリアルタイムに流す
  *
@@ -162,6 +163,105 @@ function streamClaude(req, res, { prompt, system, model }) {
   });
 }
 
+// ---------------------------------------------------------------- ローカル LLM（無料）
+// 中継先はこのパソコン上のサーバーだけに限定する
+const LLM_DEFAULTS = { ollama: 'http://127.0.0.1:11434', openai: 'http://127.0.0.1:1234/v1' };
+
+function llmBase(provider, base) {
+  const url = new URL(base || LLM_DEFAULTS[provider]);
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+    throw new Error('中継できるのはこのパソコン上（localhost）の言語モデルサーバーだけです');
+  }
+  return url.toString().replace(/\/+$/, '');
+}
+
+async function listLlmModels(provider, base) {
+  const root = llmBase(provider, base);
+  if (provider === 'ollama') {
+    const r = await fetch(root + '/api/tags');
+    if (!r.ok) throw new Error(`Ollama がエラーを返しました (${r.status})`);
+    return (await r.json()).models.map(m => m.name);
+  }
+  const r = await fetch(root + '/models');
+  if (!r.ok) throw new Error(`サーバーがエラーを返しました (${r.status})`);
+  return (await r.json()).data.map(m => m.id);
+}
+
+/** 1行ずつ届くストリーム（NDJSON / SSE）を読む */
+async function* lines(body) {
+  const decoder = new TextDecoder();
+  let buf = '';
+  for await (const chunk of body) {
+    buf += decoder.decode(chunk, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (line) yield line;
+    }
+  }
+  if (buf.trim()) yield buf.trim();
+}
+
+async function streamLlm(req, res, { provider, base, model, system, prompt }) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    ...corsHeaders(req),
+  });
+  const send = obj => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  const ac = new AbortController();
+  res.on('close', () => ac.abort());
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: prompt }];
+  try {
+    const root = llmBase(provider, base);
+    let r;
+    if (provider === 'ollama') {
+      r = await fetch(root + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages, stream: true }),
+        signal: ac.signal,
+      });
+    } else {
+      r = await fetch(root + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages, stream: true }),
+        signal: ac.signal,
+      });
+    }
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error(`言語モデルのサーバーがエラーを返しました (${r.status}): ${t.slice(0, 200)}`);
+    }
+    for await (const line of lines(r.body)) {
+      if (provider === 'ollama') {
+        const j = JSON.parse(line);
+        if (j.error) throw new Error(j.error);
+        if (j.message && j.message.content) send({ type: 'text', text: j.message.content });
+      } else {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') break;
+        const j = JSON.parse(data);
+        const t = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+        if (t) send({ type: 'text', text: t });
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      const msg = e.cause && e.cause.code === 'ECONNREFUSED'
+        ? '言語モデルのサーバーに接続できません。Ollama / LM Studio が起動しているか確認してください。'
+        : e.message;
+      send({ type: 'error', message: msg });
+    }
+  }
+  send({ type: 'done' });
+  res.end();
+}
+
 async function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let rel = decodeURIComponent(url.pathname);
@@ -189,6 +289,42 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/status' && req.method === 'GET') {
       const version = await claudeVersion();
       sendJson(req, res, 200, { ok: !!version, version });
+      return;
+    }
+    if (url.pathname === '/api/llm/models' && req.method === 'GET') {
+      try {
+        const models = await listLlmModels(url.searchParams.get('provider') || 'ollama', url.searchParams.get('base') || '');
+        sendJson(req, res, 200, { ok: true, models });
+      } catch (e) {
+        const msg = e.cause && e.cause.code === 'ECONNREFUSED'
+          ? '言語モデルのサーバーに接続できません。Ollama / LM Studio が起動しているか確認してください。'
+          : e.message;
+        sendJson(req, res, 200, { ok: false, error: msg });
+      }
+      return;
+    }
+    if (url.pathname === '/api/llm' && req.method === 'POST') {
+      if (!String(req.headers['content-type'] || '').includes('application/json')) {
+        sendJson(req, res, 415, { error: 'application/json で送ってください' });
+        return;
+      }
+      let body;
+      try { body = JSON.parse(await readBody(req)); } catch {
+        sendJson(req, res, 400, { error: '不正なリクエストです' });
+        return;
+      }
+      const provider = body.provider === 'openai' ? 'openai' : 'ollama';
+      if (typeof body.prompt !== 'string' || !body.prompt || typeof body.model !== 'string' || !body.model) {
+        sendJson(req, res, 400, { error: 'prompt と model が必要です' });
+        return;
+      }
+      streamLlm(req, res, {
+        provider,
+        base: typeof body.base === 'string' ? body.base : '',
+        model: body.model.slice(0, 200),
+        system: typeof body.system === 'string' ? body.system.slice(0, 8000) : '',
+        prompt: body.prompt,
+      });
       return;
     }
     if (url.pathname === '/api/claude' && req.method === 'POST') {

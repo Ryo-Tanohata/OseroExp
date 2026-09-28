@@ -49,6 +49,8 @@
             <option value="2">普通</option>
             <option value="3" selected>強い</option>
             <option value="4">最強</option>
+            <option value="az">AlphaZero（完成版）</option>
+            <option value="az-mid">AlphaZero（学習途中）</option>
             <option value="claude">Claude</option>
           </select>
         </div>
@@ -59,7 +61,18 @@
             <option value="2" selected>普通</option>
             <option value="3">強い</option>
             <option value="4">最強</option>
+            <option value="az">AlphaZero（完成版）</option>
+            <option value="az-mid">AlphaZero（学習途中）</option>
             <option value="claude">Claude</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <label for="az-sims">AlphaZeroの探索</label>
+          <select id="az-sims">
+            <option value="100">100回（速い）</option>
+            <option value="200">200回</option>
+            <option value="400" selected>400回</option>
+            <option value="800">800回（強い・遅い）</option>
           </select>
         </div>
         <div class="control-row">
@@ -82,24 +95,35 @@
       </div>
 
       <details class="controls claude-settings" id="claude-settings">
-        <summary>Claude 連携の設定</summary>
+        <summary>言語モデル（Claude・実況）の設定</summary>
         <div class="control-row">
           <label for="claude-provider">接続方法</label>
           <select id="claude-provider">
             <option value="none">使わない</option>
             <option value="local">ローカルの Claude Code（ログイン中のアカウント）</option>
+            <option value="ollama">Ollama（無料のオープンモデル）</option>
+            <option value="openai">LM Studio など（OpenAI互換のローカルサーバー）</option>
           </select>
         </div>
         <div class="control-row" id="row-bridge">
           <label for="claude-bridge">ブリッジURL</label>
           <input type="text" id="claude-bridge" placeholder="自動（http://localhost:8787）">
         </div>
-        <div class="control-row">
+        <div class="control-row" id="row-claude-model">
           <label for="claude-model">モデル</label>
           <select id="claude-model"></select>
         </div>
+        <div class="control-row" id="row-llm-model">
+          <label for="llm-model">モデル名</label>
+          <input type="text" id="llm-model" list="llm-model-list" placeholder="例: qwen2.5:7b">
+          <datalist id="llm-model-list"></datalist>
+        </div>
+        <div class="control-row" id="row-llm-base">
+          <label for="llm-base">サーバーURL</label>
+          <input type="text" id="llm-base" placeholder="自動">
+        </div>
         <div class="control-row checks">
-          <label><input type="checkbox" id="claude-commentary"> 毎手 Claude にリアルタイム実況させる</label>
+          <label><input type="checkbox" id="claude-commentary"> 毎手 言語モデルにリアルタイム実況させる</label>
           <label><input type="checkbox" id="claude-wait"> 実況が終わってから次の手へ進む</label>
           <label><input type="checkbox" id="claude-engine"> Claude が打つときエンジンの読みを参考にさせる</label>
         </div>
@@ -124,8 +148,23 @@
         <p class="eval-detail" id="eval-detail"></p>
       </div>
 
+      <div class="card az-card" id="az-card" hidden>
+        <h2>AlphaZero の読み <span class="claude-state" id="az-state"></span></h2>
+        <p class="claude-title" id="az-title"></p>
+        <div class="eval-bar small" aria-hidden="true">
+          <div class="eval-black" id="az-bar"></div>
+          <div class="eval-mid"></div>
+        </div>
+        <p class="az-summary" id="az-summary"></p>
+        <table class="candidates">
+          <thead><tr><th>手</th><th>探索の配分</th><th>打った後の勝率</th><th>直感（方策）</th></tr></thead>
+          <tbody id="az-moves"></tbody>
+        </table>
+        <p class="az-pv" id="az-pv"></p>
+      </div>
+
       <div class="card claude-card" id="claude-card" hidden>
-        <h2>Claude の実況 <span class="claude-state" id="claude-state"></span></h2>
+        <h2><span id="claude-card-name">Claude の実況</span> <span class="claude-state" id="claude-state"></span></h2>
         <p class="claude-title" id="claude-title"></p>
         <div class="claude-text" id="claude-text"></div>
       </div>
@@ -169,6 +208,7 @@
           <dt>着手可能数</dt><dd>打てる場所の数。多いほど選択肢が広く有利。</dd>
           <dt>壁（フロンティア）</dt><dd>空きマスに接している石。多いと相手に打つ場所を与えやすい。</dd>
           <dt>中割り</dt><dd>内側の石だけを返す手。相手の選択肢を増やさない好手になりやすい。</dd>
+          <dt>AlphaZero</dt><dd>人間の知識を使わず、自己対局だけで学習したAI。ニューラルネットの「直感（方策）」と「形勢判断（価値）」を使ってモンテカルロ木探索で手を選ぶ。</dd>
           <dt>評価値</dt><dd>AIが考えた有利さの数値。プラスなら黒有利、マイナスなら白有利。終盤で読み切った場合は最終的な石差で表示。</dd>
         </dl>
       </details>
@@ -180,6 +220,7 @@
   <script src="js/game.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/explain.js"></script>
+  <script src="js/alphazero.js"></script>
   <script src="js/claude.js"></script>
   <script src="js/main.js"></script>
 </body>

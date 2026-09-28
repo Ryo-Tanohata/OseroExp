@@ -24,8 +24,17 @@
     phase: $('phase'), evalBlack: $('eval-black'), evalPercent: $('eval-percent'),
     evalText: $('eval-text'), evalDetail: $('eval-detail'),
     lastMove: $('last-move'), advice: $('advice'), candidates: $('candidates'),
-    facts: $('facts'), points: $('points'), log: $('log'),
+    facts: $('facts'), points: $('points'), log: $('log'), preview: $('preview'),
+    claudeCard: $('claude-card'), claudeState: $('claude-state'),
+    claudeTitle: $('claude-title'), claudeText: $('claude-text'),
+    claudeProvider: $('claude-provider'), claudeBridge: $('claude-bridge'),
+    claudeApiKey: $('claude-apikey'), claudeModel: $('claude-model'),
+    claudeCommentary: $('claude-commentary'), claudeWait: $('claude-wait'),
+    claudeEngine: $('claude-engine'), claudeTest: $('claude-test'),
+    claudeTestResult: $('claude-test-result'), claudeHelp: $('claude-help'),
+    rowBridge: $('row-bridge'), rowApiKey: $('row-apikey'), claudeSettings: $('claude-settings'),
   };
+  const CL = window.OthelloClaude;
 
   const state = {
     board: O.createBoard(),
@@ -40,6 +49,8 @@
     thinking: false,
     token: 0,             // 新しい対局や待ったで古いタイマーを無効化する
     timer: null,
+    claudeAbort: null,    // 実行中の Claude への問い合わせを中断する AbortController
+    hover: null,          // マウスを乗せているマス（リアルタイムの手の説明用）
   };
 
   // ---------- 盤面の生成 ----------
@@ -73,6 +84,8 @@
         cell.appendChild(disc);
         cell.appendChild(hint);
         cell.addEventListener('click', () => onCellClick(idx));
+        cell.addEventListener('mouseenter', () => setHover(idx));
+        cell.addEventListener('mouseleave', () => setHover(null));
         el.board.appendChild(cell);
         cells[idx] = { cell, disc, hint };
       }
@@ -88,27 +101,43 @@
     return player === BLACK; // ai-human
   }
 
+  /** 1〜4 は内蔵AIの強さ、'claude' は Claude が打つ */
   function levelOf(player) {
-    return parseInt((player === BLACK ? el.levelBlack : el.levelWhite).value, 10);
+    const v = (player === BLACK ? el.levelBlack : el.levelWhite).value;
+    return v === 'claude' ? v : parseInt(v, 10);
+  }
+
+  function isClaude(player) {
+    return isAI(player) && levelOf(player) === 'claude';
   }
 
   function playerLabel(player) {
     const color = O.colorName(player);
     const mode = el.mode.value;
     if (mode === 'human-human') return color;
+    if (isClaude(player)) return `${color}（Claude）`;
     if (isAI(player)) return `${color}（AI・${AI.LEVELS[levelOf(player)].name}）`;
     return `${color}（あなた）`;
   }
 
   // ---------- 進行 ----------
+  function cancelClaude() {
+    if (state.claudeAbort) {
+      state.claudeAbort.abort();
+      state.claudeAbort = null;
+    }
+  }
+
   function newGame() {
     state.token++;
     clearTimeout(state.timer);
+    cancelClaude();
     Object.assign(state, {
       board: O.createBoard(), toMove: BLACK, analysis: null, last: null,
       history: [], log: [], justPlaced: null, justFlipped: [], thinking: false,
       paused: false,
     });
+    resetClaudeCard();
     advance();
   }
 
@@ -127,15 +156,37 @@
     state.analysis = null;
     render();
 
-    if (state.toMove === 0) return;
     const token = state.token;
+    if (state.toMove === 0) {
+      if (wantsCommentary()) startCommentary();
+      return;
+    }
     // 描画を先に反映させてから、解説用の読みを行う
     state.timer = setTimeout(() => {
       if (token !== state.token) return;
       state.analysis = AI.search(state.board, state.toMove, ANALYSIS);
       render();
-      scheduleAI();
+      afterAnalysis(token);
     }, 30);
+  }
+
+  function wantsCommentary() {
+    return CL.enabled() && CL.getSettings().commentary;
+  }
+
+  /** 解析が終わったら、Claude の実況を始め、AIの手番なら次の手を予約する */
+  function afterAnalysis(token) {
+    // Claude 自身が打った手は、その「考え」がそのまま実況になっている
+    const lastByClaude = state.last && state.last.byClaude;
+    // 次が Claude の手番なら、Claude の考えがそのまま実況になる
+    if (wantsCommentary() && state.last && !lastByClaude && !isClaude(state.toMove)) {
+      const done = startCommentary();
+      if (CL.getSettings().waitCommentary && isAI(state.toMove)) {
+        done.then(() => { if (token === state.token) scheduleAI(); });
+        return;
+      }
+    }
+    scheduleAI();
   }
 
   function scheduleAI() {
@@ -144,6 +195,10 @@
     const token = state.token;
     state.thinking = true;
     renderStatus();
+    if (isClaude(state.toMove)) {
+      claudeMove(token);
+      return;
+    }
     state.timer = setTimeout(() => {
       if (token !== state.token) return;
       const level = levelOf(state.toMove);
@@ -158,7 +213,61 @@
     }, parseInt(el.speed.value, 10));
   }
 
-  function play(move) {
+  /** Claude に次の手を考えさせる（考えている文章はリアルタイムに表示） */
+  async function claudeMove(token) {
+    cancelClaude();
+    const ctrl = new AbortController();
+    state.claudeAbort = ctrl;
+    const player = state.toMove;
+    const board = state.board;
+    const analysis = state.analysis;
+    let move = null;
+    let note = '';
+    try {
+      const text = await streamToCard({
+        title: `${playerLabel(player)}の考え`,
+        prompt: CL.movePrompt({ board, player, analysis, last: state.last }),
+        signal: ctrl.signal,
+        busyLabel: '考え中…',
+      });
+      move = CL.parseMove(text, board, player);
+      if (move === null) note = 'Claude の答えから合法手を読み取れなかったため、内蔵AIの最善手を代わりに打ちます。';
+    } catch (e) {
+      if (e.name === 'AbortError' || token !== state.token) return;
+      note = '内蔵AIの最善手を代わりに打ちます。';
+    } finally {
+      if (state.claudeAbort === ctrl) state.claudeAbort = null;
+    }
+    if (token !== state.token) return;
+    if (move === null) {
+      move = analysis.best;
+      appendCardNote(note);
+    }
+    state.thinking = false;
+    play(move, { byClaude: true });
+  }
+
+  /** 直前の手（または終局）を Claude にリアルタイム実況させる */
+  function startCommentary() {
+    cancelClaude();
+    const ctrl = new AbortController();
+    state.claudeAbort = ctrl;
+    const last = state.last;
+    let title;
+    if (state.toMove === 0) title = '対局の振り返り';
+    else if (!last) title = '局面の解説';
+    else if (last.pass) title = `${O.colorName(last.player)}のパス`;
+    else title = `${O.colorName(last.player)} ${O.toNotation(last.move)} の実況`;
+    return streamToCard({
+      title,
+      prompt: CL.commentaryPrompt({ board: state.board, toMove: state.toMove, analysis: state.analysis, last }),
+      signal: ctrl.signal,
+      busyLabel: '実況中…',
+    }).catch(() => { /* エラーはカードに表示済み */ })
+      .finally(() => { if (state.claudeAbort === ctrl) state.claudeAbort = null; });
+  }
+
+  function play(move, opts) {
     const res = O.applyMove(state.board, move, state.toMove);
     if (!res) return;
     state.token++;
@@ -168,7 +277,10 @@
     });
     const quality = C.moveQuality(state.analysis, move);
     state.log.push({ player: state.toMove, move, flips: res.flips.length, quality });
-    state.last = { player: state.toMove, move, boardBefore: state.board, analysisBefore: state.analysis };
+    state.last = {
+      player: state.toMove, move, boardBefore: state.board, analysisBefore: state.analysis,
+      byClaude: !!(opts && opts.byClaude),
+    };
     state.board = res.board;
     state.justPlaced = move;
     state.justFlipped = res.flips;
@@ -186,6 +298,7 @@
     if (!state.history.length) return;
     state.token++;
     clearTimeout(state.timer);
+    cancelClaude();
     state.thinking = false;
     let snap;
     do {
@@ -205,15 +318,130 @@
 
   function togglePause() {
     state.paused = !state.paused;
+    state.token++;
     if (state.paused) {
-      state.token++;
       clearTimeout(state.timer);
+      if (state.thinking) cancelClaude(); // 考え中の Claude は止める（実況はそのまま続ける）
       state.thinking = false;
       render();
     } else {
-      state.token++;
       render();
       if (state.analysis) scheduleAI(); else advance();
+    }
+  }
+
+  // ---------- リアルタイムの手の説明（マウスを乗せたマス）----------
+  function setHover(idx) {
+    state.hover = idx;
+    renderPreview();
+  }
+
+  function renderPreview() {
+    const idx = state.hover;
+    const p = state.toMove;
+    el.preview.innerHTML = '';
+    if (idx === null || p === 0 || !O.isLegal(state.board, idx, p)) {
+      const m = document.createElement('p');
+      m.className = 'muted';
+      m.textContent = p === 0 ? '' : '盤上の打てるマスにマウスを乗せると、その手の説明がリアルタイムに表示されます。';
+      el.preview.appendChild(m);
+      return;
+    }
+    const f = C.moveFeatures(state.board, idx, p);
+    const head = document.createElement('p');
+    head.className = 'move-title';
+    head.textContent = `もし${O.colorName(p)}が ${O.toNotation(idx)} に打つと…`;
+    if (state.analysis) {
+      const q = C.moveQuality(state.analysis, idx);
+      const cand = state.analysis.candidates.find(c => c.move === idx);
+      if (q) {
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + q.cls;
+        badge.textContent = q.label;
+        head.appendChild(badge);
+      }
+      if (cand) {
+        const sc = document.createElement('span');
+        sc.className = 'preview-score';
+        sc.textContent = `評価 ${C.formatScore(cand.score, state.analysis.exact)}・候補${q ? q.rank : '-'}位`;
+        head.appendChild(sc);
+      }
+    }
+    el.preview.appendChild(head);
+    const ul = document.createElement('ul');
+    const sentences = C.featureSentences(f, p);
+    sentences.unshift(`${f.flips}個の石を返し、相手の打てる場所は ${f.oppMobBefore} → ${f.oppMobAfter} か所になります。`);
+    for (const s of sentences) {
+      const li = document.createElement('li');
+      li.textContent = s;
+      ul.appendChild(li);
+    }
+    el.preview.appendChild(ul);
+  }
+
+  // ---------- Claude の実況カード ----------
+  function claudeVisible() {
+    return CL.enabled() || el.levelBlack.value === 'claude' || el.levelWhite.value === 'claude';
+  }
+
+  // カードの「世代」。古い問い合わせの結果が新しい表示を上書きしないようにする
+  let cardGen = 0;
+
+  function resetClaudeCard() {
+    cardGen++;
+    el.claudeCard.hidden = !claudeVisible();
+    el.claudeTitle.textContent = '';
+    el.claudeText.textContent = CL.enabled()
+      ? (CL.getSettings().commentary ? '手が打たれると、Claude がリアルタイムで実況します。' : '')
+      : 'Claude 連携がオフです。左下の「Claude 連携の設定」で接続方法を選んでください。';
+    setClaudeState('', '');
+  }
+
+  function setClaudeState(label, cls) {
+    el.claudeState.textContent = label;
+    el.claudeState.className = 'claude-state ' + cls;
+  }
+
+  function appendCardNote(note) {
+    if (!note) return;
+    const n = document.createElement('p');
+    n.className = 'claude-note';
+    n.textContent = note;
+    el.claudeText.appendChild(n);
+  }
+
+  /** Claude の返答を少しずつカードに表示する */
+  async function streamToCard({ title, prompt, signal, busyLabel }) {
+    const gen = ++cardGen;
+    const current = () => gen === cardGen;
+    el.claudeCard.hidden = false;
+    el.claudeTitle.textContent = title;
+    el.claudeText.textContent = '';
+    const body = document.createElement('p');
+    body.className = 'claude-body typing';
+    el.claudeText.appendChild(body);
+    setClaudeState(busyLabel, 'busy');
+    try {
+      const text = await CL.run({
+        system: CL.SYSTEM,
+        prompt,
+        signal,
+        onText: (_, full) => { if (current()) body.textContent = full; },
+      });
+      body.classList.remove('typing');
+      if (current()) setClaudeState('完了', 'done');
+      return text;
+    } catch (e) {
+      body.classList.remove('typing');
+      if (!current()) {
+        // 新しい表示に切り替わっているので何もしない
+      } else if (e.name === 'AbortError') {
+        setClaudeState('中断', '');
+      } else {
+        setClaudeState('エラー', 'error');
+        appendCardNote(e.message);
+      }
+      throw e;
     }
   }
 
@@ -222,6 +450,7 @@
     renderBoard();
     renderStatus();
     renderPanel();
+    renderPreview();
   }
 
   function renderBoard() {
@@ -249,7 +478,7 @@
       cell.classList.toggle('show-hint', !!(showHint || showEval));
       cell.classList.toggle('best', !!showEval && i === bestMove);
       hint.textContent = showEval ? C.formatScore(scores[i].score, state.analysis.exact) : '';
-      cell.disabled = !(isLegalHere && humanTurn);
+      cell.setAttribute('aria-disabled', String(!(isLegalHere && humanTurn)));
     }
 
     // アニメーション
@@ -348,8 +577,8 @@
           td.textContent = v;
           tr.appendChild(td);
         });
-        tr.addEventListener('mouseenter', () => cells[c.move].cell.classList.add('preview'));
-        tr.addEventListener('mouseleave', () => cells[c.move].cell.classList.remove('preview'));
+        tr.addEventListener('mouseenter', () => { cells[c.move].cell.classList.add('preview'); setHover(c.move); });
+        tr.addEventListener('mouseleave', () => { cells[c.move].cell.classList.remove('preview'); setHover(null); });
         el.candidates.appendChild(tr);
       });
     } else {
@@ -418,16 +647,89 @@
   el.btnPause.addEventListener('click', togglePause);
   el.mode.addEventListener('change', newGame);
   [el.levelBlack, el.levelWhite].forEach(s => s.addEventListener('change', () => {
+    if (el.claudeCard.hidden && claudeVisible()) resetClaudeCard();
     render();
     if (!state.thinking) return;
-    // 考え中なら新しい強さで考え直す
+    // 考え中なら新しい設定で考え直す
     state.token++;
+    cancelClaude();
     state.thinking = false;
     scheduleAI();
   }));
   el.showHints.addEventListener('change', renderBoard);
   el.showEval.addEventListener('change', renderBoard);
 
+  // ---------- Claude 連携の設定 ----------
+  const HELP = {
+    none: 'Claude を使わず、内蔵AIだけで対局・解説します。',
+    local: 'ターミナルで `node server/claude-bridge.mjs` を起動し、http://localhost:8787 を開いてください。' +
+      'パソコンの `claude` コマンド（Claude Code）にログインしているアカウントで動くので、APIキーは不要です。',
+    api: 'Claude Console で発行した APIキーを使い、ブラウザから直接 Claude API を呼びます（従量課金）。' +
+      'キーはこのブラウザの中（localStorage）にだけ保存されます。公開するファイルにキーを書き込まないでください。',
+  };
+
+  function fillModelOptions() {
+    const cfg = CL.getSettings();
+    const list = CL.MODELS[cfg.provider] || [];
+    el.claudeModel.innerHTML = '';
+    for (const m of list) {
+      const o = document.createElement('option');
+      o.value = m.value;
+      o.textContent = m.label;
+      el.claudeModel.appendChild(o);
+    }
+    if (list.some(m => m.value === cfg.model)) {
+      el.claudeModel.value = cfg.model;
+    } else if (list.length) {
+      el.claudeModel.value = list[0].value;
+      CL.save({ model: list[0].value });
+    }
+    el.claudeModel.disabled = !list.length;
+  }
+
+  function syncClaudeSettings() {
+    const cfg = CL.getSettings();
+    el.claudeProvider.value = cfg.provider;
+    el.claudeBridge.value = cfg.bridgeUrl;
+    el.claudeApiKey.value = cfg.apiKey;
+    el.claudeCommentary.checked = cfg.commentary;
+    el.claudeWait.checked = cfg.waitCommentary;
+    el.claudeEngine.checked = cfg.useEngine;
+    el.rowBridge.hidden = cfg.provider !== 'local';
+    el.rowApiKey.hidden = cfg.provider !== 'api';
+    el.claudeHelp.textContent = HELP[cfg.provider];
+    fillModelOptions();
+  }
+
+  el.claudeProvider.addEventListener('change', () => {
+    cancelClaude();
+    CL.save({ provider: el.claudeProvider.value });
+    syncClaudeSettings();
+    el.claudeTestResult.textContent = '';
+    resetClaudeCard();
+    if (CL.enabled()) el.claudeSettings.open = true;
+  });
+  el.claudeModel.addEventListener('change', () => CL.save({ model: el.claudeModel.value }));
+  el.claudeBridge.addEventListener('change', () => CL.save({ bridgeUrl: el.claudeBridge.value.trim() }));
+  el.claudeApiKey.addEventListener('change', () => CL.save({ apiKey: el.claudeApiKey.value.trim() }));
+  el.claudeCommentary.addEventListener('change', () => { CL.save({ commentary: el.claudeCommentary.checked }); resetClaudeCard(); });
+  el.claudeWait.addEventListener('change', () => CL.save({ waitCommentary: el.claudeWait.checked }));
+  el.claudeEngine.addEventListener('change', () => CL.save({ useEngine: el.claudeEngine.checked }));
+  el.claudeTest.addEventListener('click', async () => {
+    CL.save({ apiKey: el.claudeApiKey.value.trim(), bridgeUrl: el.claudeBridge.value.trim() });
+    el.claudeTestResult.textContent = '接続中…';
+    el.claudeTest.disabled = true;
+    try {
+      const reply = await CL.testConnection();
+      el.claudeTestResult.textContent = '✅ 接続できました：' + reply;
+    } catch (e) {
+      el.claudeTestResult.textContent = '❌ ' + e.message;
+    } finally {
+      el.claudeTest.disabled = false;
+    }
+  });
+
+  syncClaudeSettings();
   buildBoard();
   newGame();
 })();

@@ -22,7 +22,47 @@ HTML / CSS / JavaScript だけで動くオセロです。AIが対局し、1手�
 - **一時停止**：AI同士の対局を止めて、局面をじっくり確認できます
 - **候補手の評価値を盤に表示**：AIが読んだ各マスの評価値を盤上に表示します
 
+## Claude と連携する（Claude が打つ・リアルタイム実況）
+
+黒AI／白AIの強さで **「Claude」** を選ぶと Claude が手を選び、その考えがリアルタイムで表示されます。
+「毎手 Claude にリアルタイム実況させる」をオンにすると、誰が打った手でも Claude がストリーミングで実況します。
+
+![Claudeの実況](docs/screenshot-claude.png)
+
+接続方法は2つあります（画面左下の「Claude 連携の設定」で選択）。
+
+### 1. ローカルの Claude Code（おすすめ：自分のアカウントで動く）
+
+パソコンの `claude` コマンド（Claude Code）にログインしているアカウントで動きます。**APIキーは不要**です。
+
+```bash
+# 事前に Claude Code をインストールして `claude` で一度ログインしておく
+node server/claude-bridge.mjs
+# → ブラウザで http://localhost:8787 を開き、接続方法「ローカルの Claude Code」を選ぶ
+```
+
+- `server/claude-bridge.mjs` は依存パッケージなし（Node.js 18 以上）の小さなサーバーです
+- 受け取った依頼を `claude -p` に渡し、返ってくる文章をそのままブラウザへ流します（ツールは無効化）
+- `127.0.0.1` だけで待ち受け、他のサイトからは呼べないようにしています
+- 使った分はそのアカウントの Claude の利用枠から消費されます
+
+### 2. Claude API（APIキー）
+
+Claude Console で発行した APIキーを入力すると、ブラウザから直接 Claude API を呼びます（公式 SDK を CDN から読み込み）。
+GitHub Pages などに置いた場合でも動きますが、**claude.ai のサブスクリプションとは別の従量課金**です。
+キーはブラウザの localStorage にだけ保存されます。公開するファイルにキーを書き込まないでください。
+
+### クラウドで動かせる？
+
+| 置き場所 | 自分のアカウント（ログイン）で Claude | APIキーで Claude |
+| --- | --- | --- |
+| 自分のパソコン（`node server/claude-bridge.mjs`） | ◯ | ◯ |
+| GitHub Pages などの公開サイト | ×（Webページからはログイン中の `claude` を使えない） | ◯ |
+
 ## 局面の説明（解説）の内容
+
+- **リアルタイムの手の説明**：盤上の打てるマス（または候補手の行）にマウスを乗せると、「もしここに打つと…」の評価・特徴がすぐに表示されます
+- **Claude の実況**：Claude の文章は生成されたそばから少しずつ表示されます
 
 | パネル | 内容 |
 | --- | --- |
@@ -54,6 +94,8 @@ js/game.js        ルール（合法手・石を返す・確定石など）
 js/ai.js          AI（評価関数・αβ探索・完全読み）
 js/explain.js     局面の解説文の生成
 js/main.js        画面の描画と対局の進行
+js/claude.js      Claude 連携（プロンプト作成・ストリーミング・着手の読み取り）
+server/claude-bridge.mjs  ローカルの Claude Code とつなぐサーバー
 tests/run-tests.js  ルール・AI・解説のテスト
 ```
 

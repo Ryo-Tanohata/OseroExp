@@ -276,3 +276,41 @@ thead th { color: var(--muted); font-weight: normal; }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
 }
+
+[hidden] { display: none !important; }
+
+/* ---------- リアルタイムの手の説明 ---------- */
+.preview-box {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8ec;
+  border: 1px dashed #e5b77a;
+  font-size: .88rem;
+  min-height: 3em;
+}
+.preview-box ul { margin: 0; padding-left: 1.2em; }
+.preview-score { font-weight: normal; font-size: .8rem; color: var(--muted); }
+
+/* ---------- Claude ---------- */
+.claude-settings { margin-top: 12px; }
+.claude-settings summary { cursor: pointer; font-weight: bold; margin-bottom: 8px; }
+.claude-settings input[type="text"],
+.claude-settings input[type="password"] { flex: 1; padding: 4px 6px; font-size: .95rem; min-width: 0; }
+.note { font-size: .8rem; color: var(--muted); margin: 6px 0 0; }
+
+.claude-card { border-left: 4px solid #d97757; }
+.claude-title { font-weight: bold; margin: 0 0 4px; }
+.claude-text { font-size: .92rem; white-space: pre-wrap; }
+.claude-body { margin: 0; }
+.claude-body.typing::after {
+  content: "▍";
+  color: #d97757;
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+.claude-note { margin: 6px 0 0; font-size: .82rem; color: var(--bad); }
+.claude-state { font-size: .75rem; font-weight: normal; border-radius: 999px; padding: 0 8px; }
+.claude-state.busy { background: #fbe3d6; color: #b4532a; }
+.claude-state.done { background: #e1f3e7; color: var(--good); }
+.claude-state.error { background: #fbe0e0; color: var(--bad); }

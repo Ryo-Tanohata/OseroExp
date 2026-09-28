@@ -4,6 +4,7 @@ const assert = require('assert');
 const O = require('../js/game.js');
 const AI = require('../js/ai.js');
 const C = require('../js/explain.js');
+const CL = require('../js/claude.js');
 
 let passed = 0;
 function test(name, fn) {
@@ -69,6 +70,28 @@ test('終局の解説', () => {
   const b = new Array(64).fill(O.BLACK);
   const d = C.describe(b, 0, null, null);
   assert.ok(d.evaluation.text.includes('黒の勝ち'));
+});
+
+test('Claude の返答から着手を読み取る', () => {
+  const b = O.createBoard();
+  assert.strictEqual(CL.parseMove('いい手です。\n着手: f5', b, O.BLACK), O.fromNotation('f5'));
+  assert.strictEqual(CL.parseMove('着手：**Ｄ３**', b, O.BLACK), O.fromNotation('d3'));
+  // 最後の「着手」を採用する
+  assert.strictEqual(CL.parseMove('着手: a1 は打てないので…\n着手: c4', b, O.BLACK), O.fromNotation('c4'));
+  // 非合法手・記載なしは null
+  assert.strictEqual(CL.parseMove('着手: a1', b, O.BLACK), null);
+  assert.strictEqual(CL.parseMove('d3 がいいでしょう', b, O.BLACK), null);
+});
+
+test('Claude 用のプロンプトに盤面と合法手が入る', () => {
+  const b = O.createBoard();
+  const a = AI.search(b, O.BLACK, { depth: 2, exact: 0 });
+  const p = CL.movePrompt({ board: b, player: O.BLACK, analysis: a, last: null });
+  assert.ok(p.includes('4 . . . O X . . .'));
+  assert.ok(p.includes('合法手: d3, c4, f5, e6'));
+  assert.ok(p.includes('着手: d3'));
+  const c = CL.commentaryPrompt({ board: b, toMove: O.WHITE, analysis: a, last: { player: O.BLACK, move: 19 } });
+  assert.ok(c.includes('黒(X) が d3 に打った'));
 });
 
 console.log(`\n${passed} passed`);

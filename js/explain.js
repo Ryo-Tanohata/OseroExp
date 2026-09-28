@@ -298,7 +298,7 @@
     return out;
   }
 
-  const Commentary = { describe, moveQuality, moveFeatures, shortReason, positionFacts, judgement, winRate, formatScore, phaseOf };
+  const Commentary = { describe, moveQuality, moveFeatures, featureSentences, shortReason, positionFacts, judgement, winRate, formatScore, phaseOf };
 
   global.OthelloCommentary = Commentary;
   if (typeof module !== 'undefined' && module.exports) module.exports = Commentary;

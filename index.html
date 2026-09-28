@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AIオセロ ― 局面解説つき</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -48,6 +49,7 @@
             <option value="2">普通</option>
             <option value="3" selected>強い</option>
             <option value="4">最強</option>
+            <option value="claude">Claude</option>
           </select>
         </div>
         <div class="control-row">
@@ -57,6 +59,7 @@
             <option value="2" selected>普通</option>
             <option value="3">強い</option>
             <option value="4">最強</option>
+            <option value="claude">Claude</option>
           </select>
         </div>
         <div class="control-row">
@@ -77,6 +80,40 @@
           <button id="btn-undo">待った</button>
         </div>
       </div>
+
+      <details class="controls claude-settings" id="claude-settings">
+        <summary>Claude 連携の設定</summary>
+        <div class="control-row">
+          <label for="claude-provider">接続方法</label>
+          <select id="claude-provider">
+            <option value="none">使わない</option>
+            <option value="local">ローカルの Claude Code（ログイン中のアカウント）</option>
+            <option value="api">Claude API（APIキー）</option>
+          </select>
+        </div>
+        <div class="control-row" id="row-bridge">
+          <label for="claude-bridge">ブリッジURL</label>
+          <input type="text" id="claude-bridge" placeholder="自動（http://localhost:8787）">
+        </div>
+        <div class="control-row" id="row-apikey">
+          <label for="claude-apikey">APIキー</label>
+          <input type="password" id="claude-apikey" placeholder="sk-ant-..." autocomplete="off">
+        </div>
+        <div class="control-row">
+          <label for="claude-model">モデル</label>
+          <select id="claude-model"></select>
+        </div>
+        <div class="control-row checks">
+          <label><input type="checkbox" id="claude-commentary"> 毎手 Claude にリアルタイム実況させる</label>
+          <label><input type="checkbox" id="claude-wait"> 実況が終わってから次の手へ進む</label>
+          <label><input type="checkbox" id="claude-engine"> Claude が打つときエンジンの読みを参考にさせる</label>
+        </div>
+        <div class="buttons">
+          <button id="claude-test">接続テスト</button>
+        </div>
+        <p class="note" id="claude-test-result"></p>
+        <p class="note" id="claude-help"></p>
+      </details>
     </section>
 
     <!-- 右側：解説パネル -->
@@ -92,6 +129,12 @@
         <p class="eval-detail" id="eval-detail"></p>
       </div>
 
+      <div class="card claude-card" id="claude-card" hidden>
+        <h2>Claude の実況 <span class="claude-state" id="claude-state"></span></h2>
+        <p class="claude-title" id="claude-title"></p>
+        <div class="claude-text" id="claude-text"></div>
+      </div>
+
       <div class="card">
         <h2>直前の手</h2>
         <div id="last-move"><p class="muted">まだ手は打たれていません。</p></div>
@@ -104,6 +147,7 @@
           <thead><tr><th>順位</th><th>手</th><th>評価(手番側)</th><th>特徴</th></tr></thead>
           <tbody id="candidates"></tbody>
         </table>
+        <div class="preview-box" id="preview"><p class="muted">盤上の打てるマスにマウスを乗せると、その手の説明がリアルタイムに表示されます。</p></div>
       </div>
 
       <div class="card">
@@ -141,6 +185,7 @@
   <script src="js/game.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/explain.js"></script>
+  <script src="js/claude.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

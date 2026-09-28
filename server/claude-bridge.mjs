@@ -203,7 +203,7 @@ async function* lines(body) {
   if (buf.trim()) yield buf.trim();
 }
 
-async function streamLlm(req, res, { provider, base, model, system, prompt }) {
+async function streamLlm(req, res, { provider, base, model, system, prompt, temperature }) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache',
@@ -221,14 +221,15 @@ async function streamLlm(req, res, { provider, base, model, system, prompt }) {
       r = await fetch(root + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, stream: true }),
+        // num_ctx: お手本入りのプロンプトが既定の長さ(2048トークン)で切り捨てられないよう広げる
+        body: JSON.stringify({ model, messages, stream: true, options: { temperature, num_ctx: 8192 } }),
         signal: ac.signal,
       });
     } else {
       r = await fetch(root + '/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, stream: true }),
+        body: JSON.stringify({ model, messages, stream: true, temperature }),
         signal: ac.signal,
       });
     }
@@ -322,8 +323,9 @@ const server = http.createServer(async (req, res) => {
         provider,
         base: typeof body.base === 'string' ? body.base : '',
         model: body.model.slice(0, 200),
-        system: typeof body.system === 'string' ? body.system.slice(0, 8000) : '',
+        system: typeof body.system === 'string' ? body.system.slice(0, 16000) : '',
         prompt: body.prompt,
+        temperature: typeof body.temperature === 'number' ? Math.min(Math.max(body.temperature, 0), 2) : 0.3,
       });
       return;
     }

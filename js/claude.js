@@ -25,6 +25,8 @@
   // 各ローカル言語モデルサーバーの既定URL（ブリッジ側で localhost に限定）
   const LLM_BASES = { ollama: 'http://127.0.0.1:11434', openai: 'http://127.0.0.1:1234/v1' };
   const PROVIDERS = ['local', 'ollama', 'openai'];
+  // 実況は事実に沿ってほしいので、ばらつきを抑えめにする
+  const LLM_TEMPERATURE = 0.3;
 
   const DEFAULTS = {
     provider: 'none',
@@ -85,6 +87,7 @@
       model: settings.llmModel,
       system: opts.system,
       prompt: opts.prompt,
+      temperature: LLM_TEMPERATURE,
     }, opts);
   }
 
@@ -183,6 +186,12 @@
     '日本語で、具体的なマス名を挙げて簡潔に説明してください。見出しや箇条書きは使わず、普通の文章で書いてください。',
     '「事実メモ」やエンジンの数値が与えられた場合は、それだけを根拠にし、書かれていないことを推測で断定しないでください。',
   ].join('\n');
+
+  /** 実況用のシステムプロンプト（知識メモとお手本つき。js/prompts.js） */
+  function commentarySystem() {
+    const P = global.OthelloPrompts;
+    return P ? SYSTEM + '\n' + P.commentaryGuide() : SYSTEM;
+  }
 
   function boardText(board) {
     const rows = ['  a b c d e f g h'];
@@ -316,7 +325,7 @@
   }
 
   const Claude = {
-    MODELS, LLM_BASES, SYSTEM, getSettings, save, enabled, canPlay, isLocalLlm, run, testConnection, listLlmModels,
+    MODELS, LLM_BASES, SYSTEM, commentarySystem, getSettings, save, enabled, canPlay, isLocalLlm, run, testConnection, listLlmModels,
     movePrompt, commentaryPrompt, parseMove, boardText,
   };
   global.OthelloClaude = Claude;

@@ -46,35 +46,66 @@
       this.evals = 0;
     }
 
-    /** 3x3 畳み込み（パディング1）。out = conv(inp) + b */
-    static conv3(l, inp, out) {
+    /**
+     * 3x3 畳み込み（パディング1）。out = conv(inp) + b
+     * 入力を「9方向にずらした盤面」の並び（im2col）に展開してから、
+     * 64マス分の連続したループで積和するので速い。
+     */
+    conv3(l, inp, out) {
       const { w, b } = l;
       const Cin = l.in;
       const Cout = l.out;
-      for (let o = 0; o < Cout; o++) {
-        const ob = o * 64;
-        const bias = b[o];
-        for (let p = 0; p < 64; p++) out[ob + p] = bias;
-        for (let i = 0; i < Cin; i++) {
-          const ib = i * 64;
-          const wb = (o * Cin + i) * 9;
-          for (let ky = 0; ky < 3; ky++) {
-            const dy = ky - 1;
-            const y0 = dy < 0 ? 1 : 0;
-            const y1 = dy > 0 ? 7 : 8;
-            for (let kx = 0; kx < 3; kx++) {
-              const wv = w[wb + ky * 3 + kx];
-              if (wv === 0) continue;
-              const dx = kx - 1;
-              const x0 = dx < 0 ? 1 : 0;
-              const x1 = dx > 0 ? 7 : 8;
-              for (let y = y0; y < y1; y++) {
-                const orow = ob + y * 8;
-                const irow = ib + (y + dy) * 8 + dx;
-                for (let x = x0; x < x1; x++) out[orow + x] += wv * inp[irow + x];
-              }
+      const K = Cin * 9;
+      if (!this.cols || this.cols.length < K * 64) this.cols = new Float32Array(K * 64);
+      const cols = this.cols;
+      cols.fill(0, 0, K * 64);
+      for (let i = 0; i < Cin; i++) {
+        const ib = i * 64;
+        for (let ky = 0; ky < 3; ky++) {
+          const dy = ky - 1;
+          const y0 = dy < 0 ? 1 : 0;
+          const y1 = dy > 0 ? 7 : 8;
+          for (let kx = 0; kx < 3; kx++) {
+            const dx = kx - 1;
+            const x0 = dx < 0 ? 1 : 0;
+            const x1 = dx > 0 ? 7 : 8;
+            const cb = (i * 9 + ky * 3 + kx) * 64;
+            for (let y = y0; y < y1; y++) {
+              const src = ib + (y + dy) * 8 + dx;
+              const dst = cb + y * 8;
+              for (let x = x0; x < x1; x++) cols[dst + x] = inp[src + x];
             }
           }
+        }
+      }
+      // 出力4チャンネルずつまとめて計算し、cols の読み込みを使い回す
+      let o = 0;
+      for (; o + 4 <= Cout; o += 4) {
+        const o0 = o * 64, o1 = o0 + 64, o2 = o1 + 64, o3 = o2 + 64;
+        for (let p = 0; p < 64; p++) {
+          out[o0 + p] = b[o]; out[o1 + p] = b[o + 1]; out[o2 + p] = b[o + 2]; out[o3 + p] = b[o + 3];
+        }
+        const w0 = o * K, w1 = w0 + K, w2 = w1 + K, w3 = w2 + K;
+        for (let k = 0; k < K; k++) {
+          const a0 = w[w0 + k], a1 = w[w1 + k], a2 = w[w2 + k], a3 = w[w3 + k];
+          const cb = k * 64;
+          for (let p = 0; p < 64; p++) {
+            const c = cols[cb + p];
+            out[o0 + p] += a0 * c;
+            out[o1 + p] += a1 * c;
+            out[o2 + p] += a2 * c;
+            out[o3 + p] += a3 * c;
+          }
+        }
+      }
+      for (; o < Cout; o++) {
+        const ob = o * 64;
+        for (let p = 0; p < 64; p++) out[ob + p] = b[o];
+        const wb = o * K;
+        for (let k = 0; k < K; k++) {
+          const wv = w[wb + k];
+          const cb = k * 64;
+          for (let p = 0; p < 64; p++) out[ob + p] += wv * cols[cb + p];
         }
       }
     }
@@ -125,12 +156,12 @@
       let a = this.bufA;
       let t = this.bufB;
       const u = this.bufC;
-      Network.conv3(this.stem, x, a);
+      this.conv3(this.stem, x, a);
       Network.relu(a, C * 64);
       for (const r of this.res) {
-        Network.conv3(r.c1, a, t);
+        this.conv3(r.c1, a, t);
         Network.relu(t, C * 64);
-        Network.conv3(r.c2, t, u);
+        this.conv3(r.c2, t, u);
         for (let i = 0; i < C * 64; i++) {
           const s = a[i] + u[i];
           t[i] = s > 0 ? s : 0;

@@ -4,6 +4,7 @@ const assert = require('assert');
 const O = require('../js/game.js');
 const AI = require('../js/ai.js');
 const C = require('../js/explain.js');
+const P = require('../js/prompts.js');
 const CL = require('../js/claude.js');
 
 let passed = 0;
@@ -96,6 +97,15 @@ test('Claude 用のプロンプトに盤面と合法手が入る', () => {
   assert.ok(c.includes('黒(X) が d3 に打った'));
   assert.ok(c.includes('事実メモ'));
   assert.ok(c.includes('【最善手】'));
+});
+
+test('実況用システムプロンプトに知識メモとお手本が入る', () => {
+  const sys = CL.commentarySystem();
+  assert.ok(sys.includes('# オセロの知識'));
+  assert.ok(sys.includes('## 例' + P.EXAMPLES.length));
+  assert.ok(sys.includes(P.EXAMPLES[0].output));
+  // 小さなモデルの読み込める長さを圧迫しないこと
+  assert.ok(sys.length < 4000);
 });
 
 console.log(`\n${passed} passed`);

@@ -182,6 +182,15 @@ def cmd_showdown(args):
     if args.out:
         with open(args.out, "w") as f:
             json.dump({"summary": summary, "games": res}, f, ensure_ascii=False, indent=1)
+    if args.js:
+        # アプリの「対局の再生」で見られるようにする
+        names = {"A": f"AlphaZero 反復{it_a}", "B": f"AlphaZero 反復{it_b}"}
+        if it_a == it_b:
+            names = {"A": f"AlphaZero 反復{it_a}・A", "B": f"AlphaZero 反復{it_b}・B"}
+        data = {"summary": summary, "names": names, "games": res}
+        with open(args.js, "w") as f:
+            f.write("/* 自動生成: train/evaluate.py showdown （AlphaZero 同士の対局記録） */\n")
+            f.write("window.OTHELLO_SHOWDOWN = " + json.dumps(data, ensure_ascii=False) + ";\n")
 
 
 def main():
@@ -202,6 +211,7 @@ def main():
     p2.add_argument("--opening", type=int, default=4)
     p2.add_argument("--threads", type=int, default=4)
     p2.add_argument("--out")
+    p2.add_argument("--js", help="アプリで再生するための models/showdown.js の出力先")
     args = ap.parse_args()
     cmd_ladder(args) if args.cmd == "ladder" else cmd_showdown(args)
 

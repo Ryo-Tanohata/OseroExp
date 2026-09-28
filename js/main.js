@@ -37,6 +37,7 @@
     claudeCardName: $('claude-card-name'), rowClaudeModel: $('row-claude-model'),
     rowLlmModel: $('row-llm-model'), rowLlmBase: $('row-llm-base'),
     llmModel: $('llm-model'), llmModelList: $('llm-model-list'), llmBase: $('llm-base'),
+    rowReplay: $('row-replay'), replaySelect: $('replay-select'), btnReplay: $('btn-replay'),
     rowBridge: $('row-bridge'), claudeSettings: $('claude-settings'),
   };
   const CL = window.OthelloClaude;
@@ -58,6 +59,7 @@
     claudeAbort: null,    // 実行中の Claude への問い合わせを中断する AbortController
     hover: null,          // マウスを乗せているマス（リアルタイムの手の説明用）
     azLast: null,         // 直近の AlphaZero の探索結果（実況に使う）
+    replay: null,         // 記録した対局の再生 {moves, black, white}
   };
 
   // ---------- 盤面の生成 ----------
@@ -125,6 +127,7 @@
 
   function playerLabel(player) {
     const color = O.colorName(player);
+    if (state.replay) return `${color}（${player === BLACK ? state.replay.black : state.replay.white}）`;
     const mode = el.mode.value;
     if (mode === 'human-human') return color;
     if (isClaude(player)) return `${color}（Claude）`;
@@ -148,7 +151,7 @@
     Object.assign(state, {
       board: O.createBoard(), toMove: BLACK, analysis: null, last: null,
       history: [], log: [], justPlaced: null, justFlipped: [], thinking: false,
-      paused: false, azLast: null,
+      paused: false, azLast: null, replay: null,
     });
     for (const k of Object.keys(azTrees)) delete azTrees[k];
     el.azCard.hidden = !(isAZ(BLACK) || isAZ(WHITE));
@@ -216,6 +219,10 @@
     const token = state.token;
     state.thinking = true;
     renderStatus();
+    if (state.replay) {
+      replayMove(token);
+      return;
+    }
     if (isClaude(state.toMove)) {
       claudeMove(token);
       return;
@@ -235,6 +242,49 @@
       }
       state.thinking = false;
       if (move !== null) play(move);
+    }, parseInt(el.speed.value, 10));
+  }
+
+  // ---------- 記録した対局の再生 ----------
+  const SHOWDOWN = window.OTHELLO_SHOWDOWN || null;
+
+  function setupReplay() {
+    if (!SHOWDOWN || !SHOWDOWN.games || !SHOWDOWN.games.length) return;
+    el.rowReplay.hidden = false;
+    SHOWDOWN.games.forEach((g, i) => {
+      const o = document.createElement('option');
+      o.value = i;
+      const res = g.blackDiscs > g.whiteDiscs ? '黒勝ち' : g.blackDiscs < g.whiteDiscs ? '白勝ち' : '引き分け';
+      o.textContent = `第${i + 1}局 ${g.blackDiscs}-${g.whiteDiscs} ${res}`;
+      el.replaySelect.appendChild(o);
+    });
+  }
+
+  function startReplay() {
+    const g = SHOWDOWN.games[parseInt(el.replaySelect.value, 10)];
+    const names = SHOWDOWN.names || {};
+    el.mode.value = 'ai-ai';
+    newGame();
+    state.replay = {
+      moves: g.moves.filter(m => m !== 'pass').map(O.fromNotation),
+      black: names[g.black] || 'AlphaZero',
+      white: names[g.black === 'A' ? 'B' : 'A'] || 'AlphaZero',
+    };
+    render();
+  }
+
+  function replayMove(token) {
+    state.timer = setTimeout(() => {
+      if (token !== state.token) return;
+      const idx = state.log.filter(e => !e.pass).length;
+      const move = state.replay.moves[idx];
+      state.thinking = false;
+      if (move === undefined || !O.isLegal(state.board, move, state.toMove)) {
+        state.replay = null; // 記録の終わり（または不整合）
+        render();
+        return;
+      }
+      play(move);
     }, parseInt(el.speed.value, 10));
   }
 
@@ -402,6 +452,7 @@
       prompt: CL.commentaryPrompt({ board: state.board, toMove: state.toMove, analysis: state.analysis, last, az: azForLast(last) }),
       signal: ctrl.signal,
       busyLabel: '実況中…',
+      system: CL.commentarySystem(),
     }).catch(() => { /* エラーはカードに表示済み */ })
       .finally(() => { if (state.claudeAbort === ctrl) state.claudeAbort = null; });
   }
@@ -557,7 +608,7 @@
   }
 
   /** Claude の返答を少しずつカードに表示する */
-  async function streamToCard({ title, prompt, signal, busyLabel }) {
+  async function streamToCard({ title, prompt, signal, busyLabel, system }) {
     const gen = ++cardGen;
     const current = () => gen === cardGen;
     el.claudeCard.hidden = false;
@@ -569,7 +620,7 @@
     setClaudeState(busyLabel, 'busy');
     try {
       const text = await CL.run({
-        system: CL.SYSTEM,
+        system: system || CL.SYSTEM,
         prompt,
         signal,
         onText: (_, full) => { if (current()) body.textContent = full; },
@@ -792,6 +843,7 @@
   el.btnUndo.addEventListener('click', undo);
   el.btnPause.addEventListener('click', togglePause);
   el.mode.addEventListener('change', newGame);
+  el.btnReplay.addEventListener('click', startReplay);
   [el.levelBlack, el.levelWhite].forEach(s => s.addEventListener('change', () => {
     if (el.claudeCard.hidden && claudeVisible()) resetClaudeCard();
     if (isAZ(BLACK) || isAZ(WHITE)) el.azCard.hidden = false;
@@ -900,6 +952,7 @@
   });
 
   syncClaudeSettings();
+  setupReplay();
   buildBoard();
   newGame();
 })();

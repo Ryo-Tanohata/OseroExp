@@ -4,6 +4,16 @@ HTML / CSS / JavaScript だけで動くオセロです。AIが対局し、1手�
 
 ![スクリーンショット](docs/screenshot.png)
 
+## ブラウザで遊ぶ
+
+- **公開ページ（GitHub Pages）**: https://ryo-tanohata.github.io/OseroExp/
+  （リポジトリの Settings → Pages で公開を有効にすると見られます）
+- **自分のパソコンで**: リポジトリを ZIP でダウンロードして `index.html` をダブルクリック（ネット接続も不要）
+
+AlphaZero と対局する: 「対局モード」で「あなた(黒) vs AI(白)」を選び、「白AIの強さ」を「AlphaZero（完成版）」にします。
+AlphaZero 同士を観戦する: 「AI vs AI（観戦）」で黒・白とも AlphaZero を選びます。
+言語モデルの実況（Claude・Ollama）だけは、自分のパソコンで `node server/claude-bridge.mjs` を起動して使います。
+
 ## 遊び方
 
 ビルドやサーバーは不要です。`index.html` をブラウザで開くだけで動きます。

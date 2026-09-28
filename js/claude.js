@@ -1,18 +1,14 @@
 /*
  * claude.js — Claude との連携（着手・リアルタイム実況）
  *
- * 接続方法は2通り:
- *   local : ローカルの Claude Code（`claude` コマンド）を server/claude-bridge.mjs 経由で使う。
- *           ログイン中のアカウント（Pro/Max など）で動き、APIキーは不要。
- *   api   : Claude API をブラウザから直接呼ぶ（公式 SDK を CDN から読み込む）。
- *           Claude Console で発行した APIキーが必要。GitHub Pages などに置いても動く。
+ * ローカルの Claude Code（`claude` コマンド）を server/claude-bridge.mjs 経由で使う。
+ * ログイン中のアカウント（Pro/Max など）で動くので、APIキーも従量課金も不要。
  */
 (function (global) {
   'use strict';
 
   const O = global.Othello || (typeof require !== 'undefined' ? require('./game.js') : null);
   const STORAGE_KEY = 'othello-claude-settings';
-  const SDK_URL = 'https://esm.sh/@anthropic-ai/sdk@0.129.0';
 
   const MODELS = {
     local: [
@@ -21,18 +17,10 @@
       { value: 'sonnet', label: 'Sonnet（最新・速め）' },
       { value: 'haiku', label: 'Haiku（最速）' },
     ],
-    api: [
-      { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-      { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5（速め）' },
-      { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5（最速）' },
-    ],
   };
-  // サーバー側フォールバック（拒否時に別モデルで再実行）に対応したモデル
-  const FALLBACK_MODELS = new Set(['claude-opus-5-5', 'claude-sonnet-5-5']);
 
   const DEFAULTS = {
     provider: 'none',
-    apiKey: '',
     model: '',
     bridgeUrl: '',
     commentary: true,
@@ -41,13 +29,19 @@
   };
 
   let settings = load();
+  save({}); // 古い設定（APIキーなど）が残っていれば消しておく
 
   function load() {
+    let s;
     try {
-      return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'));
+      s = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'));
     } catch {
-      return Object.assign({}, DEFAULTS);
+      s = Object.assign({}, DEFAULTS);
     }
+    // 以前の版で保存された APIキーの設定は使わない
+    delete s.apiKey;
+    if (s.provider !== 'local') s.provider = 'none';
+    return s;
   }
 
   function save(patch) {
@@ -57,7 +51,7 @@
   }
 
   function getSettings() { return settings; }
-  function enabled() { return settings.provider === 'local' || settings.provider === 'api'; }
+  function enabled() { return settings.provider === 'local'; }
 
   function bridgeBase() {
     if (settings.bridgeUrl) return settings.bridgeUrl.replace(/\/+$/, '');
@@ -106,60 +100,9 @@
     return full;
   }
 
-  // ---------- Claude API（ブラウザから直接）----------
-  let sdkPromise = null;
-  function loadSdk() {
-    if (!sdkPromise) {
-      sdkPromise = import(SDK_URL).then(m => m.default).catch(e => {
-        sdkPromise = null;
-        throw new Error('Anthropic SDK を読み込めませんでした（ネット接続を確認してください）: ' + e.message);
-      });
-    }
-    return sdkPromise;
-  }
-
-  async function runApi({ system, prompt, onText, signal }) {
-    if (!settings.apiKey) throw new Error('APIキーが設定されていません。');
-    const Anthropic = await loadSdk();
-    const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
-    const model = settings.model || MODELS.api[0].value;
-    const params = {
-      model,
-      max_tokens: 8000,
-      system,
-      messages: [{ role: 'user', content: prompt }],
-    };
-    if (model !== 'claude-haiku-4-5') params.output_config = { effort: 'low' }; // 速く返してほしいので low
-    if (FALLBACK_MODELS.has(model)) {
-      params.betas = ['server-side-fallback-2026-07-01'];
-      params.fallbacks = 'default';
-    }
-    let full = '';
-    try {
-      const stream = client.beta.messages.stream(params, { signal });
-      stream.on('text', t => { full += t; onText(t, full); });
-      const msg = await stream.finalMessage();
-      if (msg.stop_reason === 'refusal') throw new Error('Claude がこのリクエストへの回答を控えました。');
-      return full;
-    } catch (e) {
-      if (e instanceof Anthropic.APIUserAbortError) {
-        const abort = new Error('aborted');
-        abort.name = 'AbortError';
-        throw abort;
-      }
-      if (e instanceof Anthropic.AuthenticationError) throw new Error('APIキーが正しくありません。');
-      if (e instanceof Anthropic.PermissionDeniedError) throw new Error('このAPIキーではこのモデルを使えません。');
-      if (e instanceof Anthropic.RateLimitError) throw new Error('利用制限に達しました。少し待ってから再度お試しください。');
-      if (e instanceof Anthropic.APIConnectionError) throw new Error('Claude API に接続できません。');
-      if (e instanceof Anthropic.APIError) throw new Error(`Claude API エラー (${e.status}): ${e.message}`);
-      throw e;
-    }
-  }
-
   /** Claude に問い合わせ、文章を少しずつ onText に渡す。完成した文章を返す。 */
   function run(opts) {
     if (settings.provider === 'local') return runLocal(opts);
-    if (settings.provider === 'api') return runApi(opts);
     return Promise.reject(new Error('Claude 連携がオフです。'));
   }
 

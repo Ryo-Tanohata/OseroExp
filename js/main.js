@@ -28,11 +28,11 @@
     claudeCard: $('claude-card'), claudeState: $('claude-state'),
     claudeTitle: $('claude-title'), claudeText: $('claude-text'),
     claudeProvider: $('claude-provider'), claudeBridge: $('claude-bridge'),
-    claudeApiKey: $('claude-apikey'), claudeModel: $('claude-model'),
+    claudeModel: $('claude-model'),
     claudeCommentary: $('claude-commentary'), claudeWait: $('claude-wait'),
     claudeEngine: $('claude-engine'), claudeTest: $('claude-test'),
     claudeTestResult: $('claude-test-result'), claudeHelp: $('claude-help'),
-    rowBridge: $('row-bridge'), rowApiKey: $('row-apikey'), claudeSettings: $('claude-settings'),
+    rowBridge: $('row-bridge'), claudeSettings: $('claude-settings'),
   };
   const CL = window.OthelloClaude;
 
@@ -664,8 +664,6 @@
     none: 'Claude を使わず、内蔵AIだけで対局・解説します。',
     local: 'ターミナルで `node server/claude-bridge.mjs` を起動し、http://localhost:8787 を開いてください。' +
       'パソコンの `claude` コマンド（Claude Code）にログインしているアカウントで動くので、APIキーは不要です。',
-    api: 'Claude Console で発行した APIキーを使い、ブラウザから直接 Claude API を呼びます（従量課金）。' +
-      'キーはこのブラウザの中（localStorage）にだけ保存されます。公開するファイルにキーを書き込まないでください。',
   };
 
   function fillModelOptions() {
@@ -691,12 +689,10 @@
     const cfg = CL.getSettings();
     el.claudeProvider.value = cfg.provider;
     el.claudeBridge.value = cfg.bridgeUrl;
-    el.claudeApiKey.value = cfg.apiKey;
     el.claudeCommentary.checked = cfg.commentary;
     el.claudeWait.checked = cfg.waitCommentary;
     el.claudeEngine.checked = cfg.useEngine;
     el.rowBridge.hidden = cfg.provider !== 'local';
-    el.rowApiKey.hidden = cfg.provider !== 'api';
     el.claudeHelp.textContent = HELP[cfg.provider];
     fillModelOptions();
   }
@@ -711,12 +707,11 @@
   });
   el.claudeModel.addEventListener('change', () => CL.save({ model: el.claudeModel.value }));
   el.claudeBridge.addEventListener('change', () => CL.save({ bridgeUrl: el.claudeBridge.value.trim() }));
-  el.claudeApiKey.addEventListener('change', () => CL.save({ apiKey: el.claudeApiKey.value.trim() }));
   el.claudeCommentary.addEventListener('change', () => { CL.save({ commentary: el.claudeCommentary.checked }); resetClaudeCard(); });
   el.claudeWait.addEventListener('change', () => CL.save({ waitCommentary: el.claudeWait.checked }));
   el.claudeEngine.addEventListener('change', () => CL.save({ useEngine: el.claudeEngine.checked }));
   el.claudeTest.addEventListener('click', async () => {
-    CL.save({ apiKey: el.claudeApiKey.value.trim(), bridgeUrl: el.claudeBridge.value.trim() });
+    CL.save({ bridgeUrl: el.claudeBridge.value.trim() });
     el.claudeTestResult.textContent = '接続中…';
     el.claudeTest.disabled = true;
     try {

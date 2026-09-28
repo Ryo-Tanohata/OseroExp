@@ -8,6 +8,7 @@
  *
  * `claude` コマンドにログインしているアカウント（Pro/Max など）で動くので、
  * APIキーは不要です。依存パッケージもありません（Node.js 18 以上）。
+ * 環境変数に APIキーが設定されていても、従量課金にならないよう claude には渡しません。
  *
  *   使い方:  node server/claude-bridge.mjs   → ブラウザで http://localhost:8787
  *   環境変数: PORT（既定 8787）, CLAUDE_BIN（既定 "claude"）
@@ -25,6 +26,12 @@ const HOST = '127.0.0.1';
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_BODY = 64 * 1024;
+
+// APIキー系の環境変数を取り除き、必ずログイン中のアカウント（サブスクリプション）で動かす
+const API_KEY_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
+const CHILD_ENV = Object.fromEntries(
+  Object.entries(process.env).filter(([k]) => !API_KEY_VARS.includes(k)),
+);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -79,7 +86,7 @@ function sendJson(req, res, status, obj) {
 
 function claudeVersion() {
   return new Promise(resolve => {
-    execFile(CLAUDE_BIN, ['--version'], { timeout: 15000 }, (err, stdout) => {
+    execFile(CLAUDE_BIN, ['--version'], { timeout: 15000, env: CHILD_ENV }, (err, stdout) => {
       resolve(err ? null : stdout.trim());
     });
   });
@@ -107,7 +114,7 @@ function streamClaude(req, res, { prompt, system, model }) {
   const send = obj => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   // リポジトリの CLAUDE.md などを読み込まないよう、一時ディレクトリで実行する
-  const child = spawn(CLAUDE_BIN, args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(CLAUDE_BIN, args, { cwd: os.tmpdir(), env: CHILD_ENV, stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
   let finished = false;
   let gotText = false;
@@ -216,6 +223,9 @@ server.listen(PORT, HOST, async () => {
   console.log(`AIオセロ: http://localhost:${PORT} をブラウザで開いてください`);
   if (version) {
     console.log(`Claude Code を検出しました (${version})。ログイン中のアカウントで Claude が動きます。`);
+    if (API_KEY_VARS.some(k => process.env[k])) {
+      console.log('環境変数の APIキーは使わず、ログイン中のアカウントで動かします（従量課金にはなりません）。');
+    }
   } else {
     console.log(`注意: "${CLAUDE_BIN}" コマンドが見つかりません。Claude Code をインストールし、\`claude\` でログインしてください。`);
   }

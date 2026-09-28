@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIオセロ ― 局面解説つき</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>AIオセロ <span class="sub">― 局面解説つき ―</span></h1>
+  </header>
+
+  <main class="layout">
+    <!-- 左側：盤面と操作 -->
+    <section class="board-area">
+      <div class="scoreboard">
+        <div class="player-box black" id="box-black">
+          <span class="disc-icon black"></span>
+          <span class="player-name" id="name-black">黒</span>
+          <span class="count" id="count-black">2</span>
+        </div>
+        <div class="player-box white" id="box-white">
+          <span class="disc-icon white"></span>
+          <span class="player-name" id="name-white">白</span>
+          <span class="count" id="count-white">2</span>
+        </div>
+      </div>
+
+      <div class="board" id="board" aria-label="オセロ盤"></div>
+
+      <p class="status" id="status">対局を始めましょう</p>
+
+      <div class="controls">
+        <div class="control-row">
+          <label for="mode">対局モード</label>
+          <select id="mode">
+            <option value="human-ai">あなた(黒) vs AI(白)</option>
+            <option value="ai-human">AI(黒) vs あなた(白)</option>
+            <option value="ai-ai" selected>AI vs AI（観戦）</option>
+            <option value="human-human">人 vs 人</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <label for="level-black">黒AIの強さ</label>
+          <select id="level-black" class="level-select">
+            <option value="1">弱い</option>
+            <option value="2">普通</option>
+            <option value="3" selected>強い</option>
+            <option value="4">最強</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <label for="level-white">白AIの強さ</label>
+          <select id="level-white" class="level-select">
+            <option value="1">弱い</option>
+            <option value="2" selected>普通</option>
+            <option value="3">強い</option>
+            <option value="4">最強</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <label for="speed">AIの速さ</label>
+          <select id="speed">
+            <option value="2000">ゆっくり</option>
+            <option value="1000" selected>ふつう</option>
+            <option value="400">はやい</option>
+          </select>
+        </div>
+        <div class="control-row checks">
+          <label><input type="checkbox" id="show-hints" checked> 打てる場所を表示</label>
+          <label><input type="checkbox" id="show-eval"> 候補手の評価値を盤に表示</label>
+        </div>
+        <div class="buttons">
+          <button id="btn-new" class="primary">新しい対局</button>
+          <button id="btn-pause">一時停止</button>
+          <button id="btn-undo">待った</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右側：解説パネル -->
+    <aside class="panel">
+      <div class="card">
+        <h2>形勢判断 <span class="phase" id="phase">序盤</span></h2>
+        <div class="eval-bar" aria-hidden="true">
+          <div class="eval-black" id="eval-black"></div>
+          <div class="eval-mid"></div>
+        </div>
+        <div class="eval-labels"><span>黒</span><span id="eval-percent">50%</span><span>白</span></div>
+        <p class="eval-text" id="eval-text">―</p>
+        <p class="eval-detail" id="eval-detail"></p>
+      </div>
+
+      <div class="card">
+        <h2>直前の手</h2>
+        <div id="last-move"><p class="muted">まだ手は打たれていません。</p></div>
+      </div>
+
+      <div class="card">
+        <h2>次の一手（AIの読み）</h2>
+        <p id="advice" class="advice">―</p>
+        <table class="candidates">
+          <thead><tr><th>順位</th><th>手</th><th>評価(手番側)</th><th>特徴</th></tr></thead>
+          <tbody id="candidates"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>局面のポイント</h2>
+        <table class="facts">
+          <thead><tr><th></th><th>黒</th><th>白</th></tr></thead>
+          <tbody id="facts"></tbody>
+        </table>
+        <ul id="points" class="points"></ul>
+      </div>
+
+      <div class="card">
+        <h2>棋譜</h2>
+        <ol id="log" class="log"></ol>
+      </div>
+
+      <details class="card help">
+        <summary>用語の説明</summary>
+        <dl>
+          <dt>隅（すみ）</dt><dd>盤の四隅。一度取ると絶対に返されないため非常に強い。</dd>
+          <dt>X打ち</dt><dd>隅の斜め隣（b2, g2, b7, g7）に打つこと。隅を取られやすく危険。</dd>
+          <dt>C打ち</dt><dd>隅の縦横の隣（辺上）に打つこと。状況次第で隅を狙われる。</dd>
+          <dt>確定石</dt><dd>今後どうやっても返されない石。</dd>
+          <dt>着手可能数</dt><dd>打てる場所の数。多いほど選択肢が広く有利。</dd>
+          <dt>壁（フロンティア）</dt><dd>空きマスに接している石。多いと相手に打つ場所を与えやすい。</dd>
+          <dt>中割り</dt><dd>内側の石だけを返す手。相手の選択肢を増やさない好手になりやすい。</dd>
+          <dt>評価値</dt><dd>AIが考えた有利さの数値。プラスなら黒有利、マイナスなら白有利。終盤で読み切った場合は最終的な石差で表示。</dd>
+        </dl>
+      </details>
+    </aside>
+  </main>
+
+  <footer class="site-footer">HTML / CSS / JavaScript で動作するオセロ（αβ探索AI）</footer>
+
+  <script src="js/game.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/explain.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

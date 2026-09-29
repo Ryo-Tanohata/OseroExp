@@ -67,6 +67,19 @@ test('解説が生成される', () => {
   assert.ok(d.evaluation.winRate > 0 && d.evaluation.winRate < 1);
 });
 
+test('内蔵の実況（言語モデルなし）が文章を作る', () => {
+  const b0 = O.createBoard();
+  const a0 = AI.search(b0, O.BLACK, { depth: 3, exact: 0 });
+  const b1 = O.applyMove(b0, a0.best, O.BLACK).board;
+  const a1 = AI.search(b1, O.WHITE, { depth: 3, exact: 0 });
+  const t = C.narrate(b1, O.WHITE, a1, { player: O.BLACK, move: a0.best, boardBefore: b0, analysisBefore: a0 }, null);
+  assert.ok(t.includes(O.toNotation(a0.best)));
+  assert.ok(t.includes('最善'));
+  assert.ok(t.includes('次の白は'));
+  const end = C.narrate(new Array(64).fill(O.BLACK), 0, null, null, null);
+  assert.ok(end.includes('64対0で黒の勝ち'));
+});
+
 test('終局の解説', () => {
   const b = new Array(64).fill(O.BLACK);
   const d = C.describe(b, 0, null, null);

@@ -447,6 +447,12 @@
     else if (!last) title = '局面の解説';
     else if (last.pass) title = `${O.colorName(last.player)}のパス`;
     else title = `${O.colorName(last.player)} ${O.toNotation(last.move)} の実況`;
+    if (CL.isBuiltin()) {
+      const text = C.narrate(state.board, state.toMove, state.analysis, last, azForLast(last));
+      return typeToCard({ title, text, signal: ctrl.signal })
+        .catch(() => { /* 中断 */ })
+        .finally(() => { if (state.claudeAbort === ctrl) state.claudeAbort = null; });
+    }
     return streamToCard({
       title,
       prompt: CL.commentaryPrompt({ board: state.board, toMove: state.toMove, analysis: state.analysis, last, az: azForLast(last) }),
@@ -579,6 +585,7 @@
 
   function llmName() {
     const cfg = CL.getSettings();
+    if (CL.isBuiltin()) return '内蔵';
     if (CL.isLocalLlm()) return cfg.llmModel || 'ローカルLLM';
     return 'Claude';
   }
@@ -589,7 +596,7 @@
     el.claudeCard.hidden = !claudeVisible();
     el.claudeTitle.textContent = '';
     el.claudeText.textContent = CL.enabled()
-      ? (CL.getSettings().commentary ? '手が打たれると、Claude がリアルタイムで実況します。' : '')
+      ? (CL.getSettings().commentary ? '手が打たれると、ここにリアルタイムで実況が流れます。' : '')
       : '言語モデル連携がオフです。左下の「言語モデル（Claude・実況）の設定」で接続方法を選んでください。';
     setClaudeState('', '');
   }
@@ -605,6 +612,31 @@
     n.className = 'claude-note';
     n.textContent = note;
     el.claudeText.appendChild(n);
+  }
+
+  /** 内蔵の実況を、1文字ずつ流れるように表示する */
+  function typeToCard({ title, text, signal }) {
+    const gen = ++cardGen;
+    el.claudeCard.hidden = false;
+    el.claudeTitle.textContent = title;
+    el.claudeText.textContent = '';
+    const body = document.createElement('p');
+    body.className = 'claude-body typing';
+    el.claudeText.appendChild(body);
+    setClaudeState('実況中…', 'busy');
+    return new Promise((resolve, reject) => {
+      let i = 0;
+      const step = () => {
+        if (gen !== cardGen || signal.aborted) { body.classList.remove('typing'); reject(new Error('aborted')); return; }
+        i = Math.min(text.length, i + 2);
+        body.textContent = text.slice(0, i);
+        if (i < text.length) { setTimeout(step, 30); return; }
+        body.classList.remove('typing');
+        setClaudeState('完了', 'done');
+        resolve(text);
+      };
+      step();
+    });
   }
 
   /** Claude の返答を少しずつカードに表示する */
@@ -860,7 +892,9 @@
 
   // ---------- Claude 連携の設定 ----------
   const HELP = {
-    none: '言語モデルを使わず、内蔵AIと AlphaZero だけで対局・解説します。',
+    builtin: '言語モデルを使わず、解説エンジンの計算結果と AlphaZero の読みから実況の文章を組み立てます。' +
+      'インストールも費用も不要で、公開ページでもそのまま動きます。',
+    none: '実況カードを出さず、盤の右側の解説だけを表示します。',
     ollama: 'Ollama（無料）で動かすオープンモデルが実況します。例: `ollama pull qwen2.5:7b` でモデルを入れ、' +
       '`node server/claude-bridge.mjs` を起動して http://localhost:8787 を開いてください。' +
       'モデルは実況だけを担当し、着手は AlphaZero や内蔵AIが決めます。',
@@ -896,7 +930,7 @@
     el.claudeCommentary.checked = cfg.commentary;
     el.claudeWait.checked = cfg.waitCommentary;
     el.claudeEngine.checked = cfg.useEngine;
-    el.rowBridge.hidden = cfg.provider === 'none';
+    el.rowBridge.hidden = cfg.provider === 'none' || cfg.provider === 'builtin';
     el.rowClaudeModel.hidden = cfg.provider !== 'local';
     el.rowLlmModel.hidden = !CL.isLocalLlm();
     el.rowLlmBase.hidden = !CL.isLocalLlm();

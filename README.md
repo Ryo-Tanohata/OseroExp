@@ -22,7 +22,8 @@ HTML / CSS / JavaScript だけで動くオセロです。AIが対局し、1手�
 
 AlphaZero と対局する: 「対局モード」で「あなた(黒) vs AI(白)」を選び、「白AIの強さ」を「AlphaZero（完成版）」にします。
 AlphaZero 同士を観戦する: 「AI vs AI（観戦）」で黒・白とも AlphaZero を選びます。
-言語モデルの実況（Claude・Ollama）だけは、自分のパソコンで `node server/claude-bridge.mjs` を起動して使います。
+実況は既定で **「内蔵の実況」**（言語モデルなし・無料・インストール不要）が1文字ずつリアルタイムに流れます。**Ollama や Qwen は不要**です。
+Claude や Ollama の言語モデルで実況させたい場合だけ、自分のパソコンで `node server/claude-bridge.mjs` を起動して使います（任意）。
 無料のローカルモデル（Ollama など）の使い方と規約上の注意は [docs/llm.md](docs/llm.md) にまとめています。
 
 ## 遊び方

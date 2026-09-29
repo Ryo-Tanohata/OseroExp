@@ -298,7 +298,83 @@
     return out;
   }
 
-  const Commentary = { describe, moveQuality, moveFeatures, featureSentences, shortReason, positionFacts, judgement, winRate, formatScore, phaseOf };
+  /**
+   * 言語モデルを使わない「内蔵の実況」。事実と AlphaZero の読みから3〜5文の実況を組み立てる。
+   * @param {object|null} az 直前の手を打った AlphaZero の探索結果 {player, stats}
+   */
+  function narrate(board, toMove, analysis, last, az) {
+    const out = [];
+    const facts = positionFacts(board);
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+    if (last && last.pass) {
+      out.push(`${name(last.player)}は打てる場所がなく、パスです。`);
+    } else if (last && last.boardBefore) {
+      const f = moveFeatures(last.boardBefore, last.move, last.player);
+      const q = moveQuality(last.analysisBefore, last.move);
+      const who = name(last.player);
+      let s = pick([`${who}は ${N(last.move)} に打ちました。`, `${who}、${N(last.move)} です。`, `${who}の手は ${N(last.move)}。`]);
+      if (q) {
+        const best = last.analysisBefore.candidates[0];
+        if (q.label === '最善手') s += pick(['読みでも最善の一手です。', 'これは最善手です。']);
+        else if (q.label === '好手') s += '最善とほぼ同等の好手です。';
+        else if (q.label === '唯一の手') s += 'ここはこれしか打てる場所がありませんでした。';
+        else if (q.label === '緩手') s += `少し緩い手で、${N(best.move)} の方が良かったようです。`;
+        else s += `これは${q.label}で、${N(best.move)} が有力でした。`;
+      }
+      out.push(s);
+
+      // 手の特徴から一番大事なものを1〜2つ
+      const notes = [];
+      if (f.type === 'corner') notes.push('隅を取ったので、この石はもう返されません。');
+      if (f.type === 'x' && f.cornerEmpty) notes.push(`隅 ${N(f.cornerFor)} の斜め隣に入るX打ちで、隅を狙われる危険があります。`);
+      if (f.forcesPass) notes.push(`${name(-last.player)}を打てる場所のない状態に追い込み、パスさせます！`);
+      if (f.givesCorner.length) notes.push(`ただ、${name(-last.player)}に隅 ${f.givesCorner.map(N).join('・')} を取られるチャンスを与えました。`);
+      if (!notes.length && f.quiet && f.type === 'inner') notes.push('内側の石だけを返す中割りで、相手に打つ場所を与えない好形です。');
+      if (!notes.length && f.oppMobAfter < f.oppMobBefore - 2) notes.push(`相手の打てる場所を ${f.oppMobBefore} から ${f.oppMobAfter} に減らしました。`);
+      if (!notes.length && f.flips >= 6 && !f.endsGame) notes.push(`${f.flips}個も返しましたが、石を取りすぎると相手の打てる場所が増えがちです。`);
+      out.push(...notes.slice(0, 2));
+    }
+
+    if (az && az.stats) {
+      const st = az.stats;
+      const top = st.moves[0];
+      const wr = Math.round(st.winRate * 100);
+      out.push(top && top.share >= 0.6
+        ? `AlphaZero は打つ前に自分の勝率を約${wr}%と見て、${N(top.move)} に探索の${Math.round(top.share * 100)}%を集中させていました。`
+        : `AlphaZero は打つ前に自分の勝率を約${wr}%と見ていました。`);
+    }
+
+    if (toMove === 0) {
+      const { black, white } = facts.discs;
+      if (black === white) out.push(`対局終了、${black}対${white}の引き分けです。`);
+      else {
+        const winner = black > white ? '黒' : '白';
+        out.push(`対局終了、${Math.max(black, white)}対${Math.min(black, white)}で${winner}の勝ちです。`);
+        const c = black > white ? facts.corners.black : facts.corners.white;
+        if (c >= 2) out.push(`隅を${c}つ押さえたことが勝因のひとつでしょう。`);
+      }
+      return out.join('');
+    }
+
+    if (analysis && analysis.candidates.length) {
+      const j = judgement(analysis.score * toMove, analysis.exact);
+      out.push(analysis.exact ? `終局まで読み切ると、${j.text.replace('読み切り：', '')}です。` : `形勢は${j.text.replace('の形勢', '')}です。`);
+      const best = analysis.candidates[0];
+      const bf = moveFeatures(board, best.move, toMove);
+      let s = `次の${name(toMove)}は ${N(best.move)} が有力です。`;
+      if (bf.type === 'corner') s = `次の${name(toMove)}は ${N(best.move)} で隅を取れます。`;
+      else if (bf.forcesPass) s += '相手をパスに追い込める手です。';
+      out.push(s);
+    }
+    const m = facts.mobility;
+    if (Math.abs(m.black - m.white) >= 4) {
+      out.push(`打てる場所は黒${m.black}・白${m.white}で、${m.black > m.white ? '黒' : '白'}が主導権を握っています。`);
+    }
+    return out.join('');
+  }
+
+  const Commentary = { describe, narrate, moveQuality, moveFeatures, featureSentences, shortReason, positionFacts, judgement, winRate, formatScore, phaseOf };
 
   global.OthelloCommentary = Commentary;
   if (typeof module !== 'undefined' && module.exports) module.exports = Commentary;

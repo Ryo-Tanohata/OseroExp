@@ -15,6 +15,24 @@
   <main class="layout">
     <!-- 左側：盤面と操作 -->
     <section class="board-area">
+      <div class="controls play-panel">
+        <div class="control-row">
+          <label for="opponent">対戦相手</label>
+          <select id="opponent">
+            <option value="az" selected>AlphaZero（完成版・いちばん強い）</option>
+            <option value="4">最強（αβ探索）</option>
+            <option value="3">強い</option>
+            <option value="2">普通</option>
+            <option value="1">弱い</option>
+            <option value="az-mid">AlphaZero（学習途中）</option>
+          </select>
+        </div>
+        <div class="buttons">
+          <button id="btn-play-black" class="primary">黒（先手）で対戦</button>
+          <button id="btn-play-white" class="primary">白（後手）で対戦</button>
+        </div>
+      </div>
+
       <div class="scoreboard">
         <div class="player-box black" id="box-black">
           <span class="disc-icon black"></span>
@@ -36,9 +54,9 @@
         <div class="control-row">
           <label for="mode">対局モード</label>
           <select id="mode">
-            <option value="human-ai">あなた(黒) vs AI(白)</option>
+            <option value="human-ai" selected>あなた(黒) vs AI(白)</option>
             <option value="ai-human">AI(黒) vs あなた(白)</option>
-            <option value="ai-ai" selected>AI vs AI（観戦）</option>
+            <option value="ai-ai">AI vs AI（観戦）</option>
             <option value="human-human">人 vs 人</option>
           </select>
         </div>
@@ -58,10 +76,10 @@
           <label for="level-white">白AIの強さ</label>
           <select id="level-white" class="level-select">
             <option value="1">弱い</option>
-            <option value="2" selected>普通</option>
+            <option value="2">普通</option>
             <option value="3">強い</option>
             <option value="4">最強</option>
-            <option value="az">AlphaZero（完成版）</option>
+            <option value="az" selected>AlphaZero（完成版）</option>
             <option value="az-mid">AlphaZero（学習途中）</option>
             <option value="claude">Claude</option>
           </select>

@@ -314,3 +314,7 @@ thead th { color: var(--muted); font-weight: normal; }
 .claude-state.busy { background: #fbe3d6; color: #b4532a; }
 .claude-state.done { background: #e1f3e7; color: var(--good); }
 .claude-state.error { background: #fbe0e0; color: var(--bad); }
+
+/* ---------- 対戦パネル ---------- */
+.play-panel { margin-bottom: 12px; border: 2px solid var(--accent); }
+.play-panel .buttons { margin-top: 2px; }

@@ -38,6 +38,7 @@
     rowLlmModel: $('row-llm-model'), rowLlmBase: $('row-llm-base'),
     llmModel: $('llm-model'), llmModelList: $('llm-model-list'), llmBase: $('llm-base'),
     rowReplay: $('row-replay'), replaySelect: $('replay-select'), btnReplay: $('btn-replay'),
+    opponent: $('opponent'), btnPlayBlack: $('btn-play-black'), btnPlayWhite: $('btn-play-white'),
     rowBridge: $('row-bridge'), claudeSettings: $('claude-settings'),
   };
   const CL = window.OthelloClaude;
@@ -735,7 +736,16 @@
     el.boxWhite.classList.toggle('active', state.toMove === WHITE);
 
     let text;
-    if (state.toMove === 0) {
+    // 人間とAIの対局なら、人間の色
+    const mode = el.mode.value;
+    const human = mode === 'human-ai' ? BLACK : mode === 'ai-human' ? WHITE : 0;
+    if (state.toMove === 0 && human) {
+      const mine = human === BLACK ? black : white;
+      const theirs = human === BLACK ? white : black;
+      text = mine > theirs ? `対局終了：あなたの勝ち！🎉（${mine} 対 ${theirs}）`
+        : mine < theirs ? `対局終了：AIの勝ち（あなた ${mine} 対 AI ${theirs}）。「待った」で戻して再挑戦もできます`
+          : `対局終了：引き分け（${mine} 対 ${theirs}）`;
+    } else if (state.toMove === 0) {
       text = black > white ? `対局終了：黒の勝ち！（${black} 対 ${white}）`
         : white > black ? `対局終了：白の勝ち！（${white} 対 ${black}）`
           : `対局終了：引き分け（${black} 対 ${white}）`;
@@ -875,6 +885,21 @@
   el.btnUndo.addEventListener('click', undo);
   el.btnPause.addEventListener('click', togglePause);
   el.mode.addEventListener('change', newGame);
+
+  /** 対戦相手を選んで、先手（黒）または後手（白）で対局を始める */
+  function startHumanGame(humanColor) {
+    const opp = el.opponent.value;
+    if (humanColor === BLACK) {
+      el.mode.value = 'human-ai';
+      el.levelWhite.value = opp;
+    } else {
+      el.mode.value = 'ai-human';
+      el.levelBlack.value = opp;
+    }
+    newGame();
+  }
+  el.btnPlayBlack.addEventListener('click', () => startHumanGame(BLACK));
+  el.btnPlayWhite.addEventListener('click', () => startHumanGame(WHITE));
   el.btnReplay.addEventListener('click', startReplay);
   [el.levelBlack, el.levelWhite].forEach(s => s.addEventListener('change', () => {
     if (el.claudeCard.hidden && claudeVisible()) resetClaudeCard();

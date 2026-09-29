@@ -71,7 +71,7 @@
 
   function bridgeBase() {
     if (settings.bridgeUrl) return settings.bridgeUrl.replace(/\/+$/, '');
-    // ブリッジから配信されていれば同じオリジン、file:// で開いた場合は既定のポート
+    // ブリッジ（http://localhost:8787）から配信されたページからだけ使える
     return location.protocol.startsWith('http') ? '' : 'http://localhost:8787';
   }
 
@@ -94,6 +94,7 @@
   }
 
   async function listLlmModels() {
+    if (!settings.bridgeUrl) checkPageOrigin();
     let res;
     try {
       const q = new URLSearchParams({ provider: settings.provider, base: settings.llmBase });
@@ -106,8 +107,17 @@
     return j.models;
   }
 
+  /** ブリッジに接続できるページか（安全のため、ブリッジ自身が配信したページからだけ許可） */
+  function checkPageOrigin() {
+    const ok = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port === '8787';
+    if (!ok) {
+      throw new Error('Claude・Ollama の実況は、`node server/claude-bridge.mjs` を起動して http://localhost:8787 で開いたページでだけ使えます（公開ページや file:// からは使えません）。');
+    }
+  }
+
   /** ブリッジから Server-Sent Events で届く文章を読む */
   async function streamFromBridge(path, payload, { onText, signal }) {
+    if (!settings.bridgeUrl) checkPageOrigin();
     let res;
     try {
       res = await fetch(bridgeBase() + path, {
@@ -156,6 +166,7 @@
 
   async function testConnection() {
     if (isBuiltin()) return '内蔵の実況は言語モデルを使わないので、接続は不要です。';
+    if (!settings.bridgeUrl) checkPageOrigin();
     if (settings.provider === 'local') {
       let res;
       try {

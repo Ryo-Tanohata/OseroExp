@@ -295,8 +295,7 @@ thead th { color: var(--muted); font-weight: normal; }
 /* ---------- Claude ---------- */
 .claude-settings { margin-top: 12px; }
 .claude-settings summary { cursor: pointer; font-weight: bold; margin-bottom: 8px; }
-.claude-settings input[type="text"],
-.claude-settings input[type="password"] { flex: 1; padding: 4px 6px; font-size: .95rem; min-width: 0; }
+.claude-settings input[type="text"] { flex: 1; padding: 4px 6px; font-size: .95rem; min-width: 0; }
 .note { font-size: .8rem; color: var(--muted); margin: 6px 0 0; }
 
 .claude-card { border-left: 4px solid #d97757; }

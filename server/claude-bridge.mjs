@@ -43,13 +43,15 @@ const MIME = {
   '.md': 'text/markdown; charset=utf-8',
 };
 
-// 他のサイトからこのサーバーを勝手に使われないよう、許可するオリジンを限定する
-// （"null" は index.html を file:// で直接開いた場合）
+// 他のサイトからこのサーバーを勝手に使われないよう、許可するオリジンを
+// このサーバー自身（http://localhost:8787）だけに限定する。
+// "null"（file:// やサンドボックス化された iframe）は、悪意あるサイトからも名乗れるので許可しない。
 const ALLOWED_ORIGINS = new Set([
-  'null',
   `http://localhost:${PORT}`,
   `http://127.0.0.1:${PORT}`,
 ]);
+// DNS リバインディング対策: Host ヘッダーもこのパソコン宛てのものだけ受け付ける
+const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
 
 function corsHeaders(req) {
   const origin = req.headers.origin;
@@ -63,6 +65,7 @@ function corsHeaders(req) {
 }
 
 function originAllowed(req) {
+  if (!ALLOWED_HOSTS.has(String(req.headers.host || '').toLowerCase())) return false;
   return !req.headers.origin || ALLOWED_ORIGINS.has(req.headers.origin);
 }
 

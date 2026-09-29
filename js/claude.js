@@ -107,10 +107,15 @@
     return j.models;
   }
 
+  /** ブリッジ自身（http://localhost:8787）が配信したページか */
+  function onBridgePage() {
+    return typeof location !== 'undefined' &&
+      /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port === '8787';
+  }
+
   /** ブリッジに接続できるページか（安全のため、ブリッジ自身が配信したページからだけ許可） */
   function checkPageOrigin() {
-    const ok = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port === '8787';
-    if (!ok) {
+    if (!onBridgePage()) {
       throw new Error('Claude・Ollama の実況は、`node server/claude-bridge.mjs` を起動して http://localhost:8787 で開いたページでだけ使えます（公開ページや file:// からは使えません）。');
     }
   }
@@ -165,7 +170,7 @@
   }
 
   async function testConnection() {
-    if (isBuiltin()) return '内蔵の実況は言語モデルを使わないので、接続は不要です。';
+    if (isBuiltin()) return '内蔵の実況は Claude などの言語モデルを使わず、ブラウザの中だけで動くので、接続するものはありません（Claude にはつながっていません）。';
     if (!settings.bridgeUrl) checkPageOrigin();
     if (settings.provider === 'local') {
       let res;
@@ -339,7 +344,7 @@
   }
 
   const Claude = {
-    MODELS, LLM_BASES, SYSTEM, commentarySystem, getSettings, save, enabled, canPlay, isBuiltin, isLocalLlm, run, testConnection, listLlmModels,
+    MODELS, LLM_BASES, SYSTEM, commentarySystem, getSettings, save, enabled, canPlay, isBuiltin, isLocalLlm, onBridgePage, run, testConnection, listLlmModels,
     movePrompt, commentaryPrompt, parseMove, boardText,
   };
   global.OthelloClaude = Claude;

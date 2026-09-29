@@ -917,8 +917,8 @@
 
   // ---------- Claude 連携の設定 ----------
   const HELP = {
-    builtin: '言語モデルを使わず、解説エンジンの計算結果と AlphaZero の読みから実況の文章を組み立てます。' +
-      'インストールも費用も不要で、公開ページでもそのまま動きます。',
+    builtin: '言語モデル（Claude など）は使わず、このブラウザの中だけで、解説エンジンの計算結果と AlphaZero の読みから実況の文章を組み立てます。' +
+      'どこにも接続せず、ログインも費用も不要です。',
     none: '実況カードを出さず、盤の右側の解説だけを表示します。',
     ollama: 'Ollama（無料）で動かすオープンモデルが実況します。例: `ollama pull qwen2.5:7b` でモデルを入れ、' +
       '`node server/claude-bridge.mjs` を起動して http://localhost:8787 を開いてください。' +
@@ -946,6 +946,24 @@
       CL.save({ model: list[0].value });
     }
     el.claudeModel.disabled = !list.length;
+  }
+
+  /**
+   * 公開ページや file:// では Claude・Ollama は使えないので、選択肢を無効にして理由を表示する。
+   * （ログイン情報はページには一切なく、ローカルのブリッジ経由でしか言語モデルに届かないため）
+   */
+  function restrictProvidersToPage() {
+    if (CL.onBridgePage() || CL.getSettings().bridgeUrl) return;
+    for (const o of el.claudeProvider.options) {
+      if (['local', 'ollama', 'openai'].includes(o.value)) {
+        o.disabled = true;
+        o.textContent += '（自分のPCで http://localhost:8787 を開いたときだけ）';
+      }
+    }
+    if (['local', 'ollama', 'openai'].includes(CL.getSettings().provider)) CL.save({ provider: 'builtin' });
+    for (const o of [...el.levelBlack.options, ...el.levelWhite.options]) {
+      if (o.value === 'claude') { o.disabled = true; o.textContent += '（ローカルのみ）'; }
+    }
   }
 
   function syncClaudeSettings() {
@@ -1002,7 +1020,7 @@
         }
       }
       const reply = await CL.testConnection();
-      el.claudeTestResult.textContent = '✅ 接続できました：' + reply;
+      el.claudeTestResult.textContent = (CL.isBuiltin() ? 'ℹ️ ' : '✅ 接続できました：') + reply;
     } catch (e) {
       el.claudeTestResult.textContent = '❌ ' + e.message;
     } finally {
@@ -1010,6 +1028,7 @@
     }
   });
 
+  restrictProvidersToPage();
   syncClaudeSettings();
   setupReplay();
   buildBoard();

@@ -1,3 +1,4 @@
 train/checkpoints/
 train/__pycache__/
 node_modules/
+train/train_stdout.log

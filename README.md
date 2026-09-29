@@ -4,6 +4,16 @@ HTML / CSS / JavaScript だけで動くオセロです。AIが対局し、1手�
 
 ![スクリーンショット](docs/screenshot.png)
 
+## AlphaZero
+
+人間の知識を使わず、**ルールだけから自己対局 20,160局で学習した AlphaZero** が入っています（CPU 4コアで約3.5時間）。
+完成版は内蔵の αβ 探索AI「普通」「強い」「最強」に **120戦全勝**。十分に強くなった完成版同士の対戦は接戦や引き分けが多くなりました。
+詳しい数値・対戦結果・再現手順は [docs/alphazero.md](docs/alphazero.md) を見てください。
+
+- 盤の右側「AlphaZero の読み」に、勝率・候補手の探索配分・ネットの直感・読み筋が探索中もリアルタイムで表示されます
+- 「AlphaZero（学習途中）」（反復10）と戦わせると、学習による成長がわかります
+- 「対局の再生」で、完成版同士の20局を実況つきで見られます
+
 ## ブラウザで遊ぶ
 
 - **公開ページ（GitHub Pages）**: https://ryo-tanohata.github.io/OseroExp/
@@ -13,6 +23,7 @@ HTML / CSS / JavaScript だけで動くオセロです。AIが対局し、1手�
 AlphaZero と対局する: 「対局モード」で「あなた(黒) vs AI(白)」を選び、「白AIの強さ」を「AlphaZero（完成版）」にします。
 AlphaZero 同士を観戦する: 「AI vs AI（観戦）」で黒・白とも AlphaZero を選びます。
 言語モデルの実況（Claude・Ollama）だけは、自分のパソコンで `node server/claude-bridge.mjs` を起動して使います。
+無料のローカルモデル（Ollama など）の使い方と規約上の注意は [docs/llm.md](docs/llm.md) にまとめています。
 
 ## 遊び方
 
@@ -89,7 +100,13 @@ js/game.js        ルール（合法手・石を返す・確定石など）
 js/ai.js          AI（評価関数・αβ探索・完全読み）
 js/explain.js     局面の解説文の生成
 js/main.js        画面の描画と対局の進行
-js/claude.js      Claude 連携（プロンプト作成・ストリーミング表示・着手の読み取り）
+js/claude.js      言語モデル連携（プロンプト作成・ストリーミング表示・着手の読み取り）
+js/prompts.js     実況用の知識メモとお手本（書き換え可）
+js/alphazero.js   AlphaZero の推論と探索（ブラウザ用）
+models/           学習済みの重み・完成版同士の対局記録
+train/            AlphaZero の学習・評価（Python + PyTorch）
+docs/alphazero.md 学習と対戦の記録
+docs/llm.md       実況用の言語モデル（無料・規約の注意）
 server/claude-bridge.mjs  ローカルの Claude Code とつなぐサーバー
 tests/run-tests.js  ルール・AI・解説のテスト
 ```

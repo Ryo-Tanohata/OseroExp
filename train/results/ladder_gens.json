@@ -1,0 +1,90 @@
+[
+ {
+  "iter": 10,
+  "selfPlayGames": 1920,
+  "level": 3,
+  "win": 12,
+  "draw": 1,
+  "loss": 7,
+  "score": 0.625,
+  "sims": 400,
+  "sec": 97.5
+ },
+ {
+  "iter": 10,
+  "selfPlayGames": 1920,
+  "level": 4,
+  "win": 2,
+  "draw": 1,
+  "loss": 17,
+  "score": 0.125,
+  "sims": 400,
+  "sec": 198.1
+ },
+ {
+  "iter": 25,
+  "selfPlayGames": 4800,
+  "level": 3,
+  "win": 19,
+  "draw": 1,
+  "loss": 0,
+  "score": 0.975,
+  "sims": 400,
+  "sec": 101.4
+ },
+ {
+  "iter": 25,
+  "selfPlayGames": 4800,
+  "level": 4,
+  "win": 14,
+  "draw": 1,
+  "loss": 5,
+  "score": 0.725,
+  "sims": 400,
+  "sec": 234.5
+ },
+ {
+  "iter": 50,
+  "selfPlayGames": 9600,
+  "level": 3,
+  "win": 20,
+  "draw": 0,
+  "loss": 0,
+  "score": 1.0,
+  "sims": 400,
+  "sec": 100.7
+ },
+ {
+  "iter": 50,
+  "selfPlayGames": 9600,
+  "level": 4,
+  "win": 15,
+  "draw": 0,
+  "loss": 5,
+  "score": 0.75,
+  "sims": 400,
+  "sec": 214.2
+ },
+ {
+  "iter": 75,
+  "selfPlayGames": 14400,
+  "level": 3,
+  "win": 20,
+  "draw": 0,
+  "loss": 0,
+  "score": 1.0,
+  "sims": 400,
+  "sec": 101.0
+ },
+ {
+  "iter": 75,
+  "selfPlayGames": 14400,
+  "level": 4,
+  "win": 19,
+  "draw": 1,
+  "loss": 0,
+  "score": 0.975,
+  "sims": 400,
+  "sec": 211.1
+ }
+]

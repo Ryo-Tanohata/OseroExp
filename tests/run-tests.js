@@ -108,4 +108,23 @@ test('実況用システムプロンプトに知識メモとお手本が入る',
   assert.ok(sys.length < 4000);
 });
 
-console.log(`\n${passed} passed`);
+const AZ = require('../js/alphazero.js');
+const azData = require('../models/alphazero.js');
+
+test('AlphaZero（学習済み）の推論が正しい形の出力を返す', () => {
+  const net = new AZ.Network(azData);
+  const r = net.evaluate(O.createBoard(), O.BLACK);
+  assert.strictEqual(r.logits.length, 65);
+  assert.ok(r.value >= -1 && r.value <= 1);
+});
+
+(async () => {
+  const net = new AZ.Network(azData);
+  const s = await new AZ.MCTS(net).search(O.createBoard(), O.BLACK, { sims: 50 });
+  test('AlphaZero の探索が初期局面で合法手を選ぶ', () => {
+    assert.ok(O.isLegal(O.createBoard(), s.move, O.BLACK));
+    assert.strictEqual(s.sims, 50);
+    assert.ok(s.winRate > 0.2 && s.winRate < 0.8, '初期局面はほぼ互角のはず: ' + s.winRate);
+  });
+  console.log(`\n${passed} passed`);
+})();

@@ -20,7 +20,8 @@
     } else {
       bytes = new Uint8Array(Buffer.from(b64, 'base64'));
     }
-    return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+    // 計算は Float64Array の方が JavaScript では速いので変換しておく
+    return Float64Array.from(new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4));
   }
 
   function layer(l) {
@@ -40,9 +41,9 @@
       this.vFc1 = layer(json.value.fc1);
       this.vFc2 = layer(json.value.fc2);
       const C = this.C;
-      this.bufA = new Float32Array(C * 64);
-      this.bufB = new Float32Array(C * 64);
-      this.bufC = new Float32Array(C * 64);
+      this.bufA = new Float64Array(C * 64);
+      this.bufB = new Float64Array(C * 64);
+      this.bufC = new Float64Array(C * 64);
       this.evals = 0;
     }
 
@@ -56,7 +57,7 @@
       const Cin = l.in;
       const Cout = l.out;
       const K = Cin * 9;
-      if (!this.cols || this.cols.length < K * 64) this.cols = new Float32Array(K * 64);
+      if (!this.cols || this.cols.length < K * 64) this.cols = new Float64Array(K * 64);
       const cols = this.cols;
       cols.fill(0, 0, K * 64);
       for (let i = 0; i < Cin; i++) {
@@ -140,12 +141,12 @@
 
     /**
      * 局面を評価する。
-     * @returns {{logits: Float32Array, value: number}} value は手番側から見た値（-1〜+1）
+     * @returns {{logits: Float64Array, value: number}} value は手番側から見た値（-1〜+1）
      */
     evaluate(board, player) {
       this.evals++;
       const C = this.C;
-      const x = new Float32Array(3 * 64);
+      const x = new Float64Array(3 * 64);
       const legal = O.getLegalMoves(board, player);
       for (let i = 0; i < 64; i++) {
         if (board[i] === player) x[i] = 1;
@@ -171,19 +172,19 @@
       this.bufA = a;
       this.bufB = t;
 
-      const ph = new Float32Array(2 * 64);
+      const ph = new Float64Array(2 * 64);
       Network.conv1(this.pConv, a, ph);
       Network.relu(ph, 128);
-      const logits = new Float32Array(65);
+      const logits = new Float64Array(65);
       Network.linear(this.pFc, ph, logits);
 
-      const vh = new Float32Array(64);
+      const vh = new Float64Array(64);
       Network.conv1(this.vConv, a, vh);
       Network.relu(vh, 64);
-      const h = new Float32Array(this.vFc1.out);
+      const h = new Float64Array(this.vFc1.out);
       Network.linear(this.vFc1, vh, h);
       Network.relu(h, h.length);
-      const vo = new Float32Array(1);
+      const vo = new Float64Array(1);
       Network.linear(this.vFc2, h, vo);
       return { logits, value: Math.tanh(vo[0]) };
     }

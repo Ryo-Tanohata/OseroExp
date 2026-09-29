@@ -1,0 +1,35 @@
+[
+ {
+  "iter": 105,
+  "selfPlayGames": 20160,
+  "level": 2,
+  "win": 40,
+  "draw": 0,
+  "loss": 0,
+  "score": 1.0,
+  "sims": 400,
+  "sec": 162.8
+ },
+ {
+  "iter": 105,
+  "selfPlayGames": 20160,
+  "level": 3,
+  "win": 40,
+  "draw": 0,
+  "loss": 0,
+  "score": 1.0,
+  "sims": 400,
+  "sec": 176.8
+ },
+ {
+  "iter": 105,
+  "selfPlayGames": 20160,
+  "level": 4,
+  "win": 40,
+  "draw": 0,
+  "loss": 0,
+  "score": 1.0,
+  "sims": 400,
+  "sec": 451.0
+ }
+]
